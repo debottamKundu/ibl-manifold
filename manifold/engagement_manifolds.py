@@ -236,7 +236,7 @@ def run_parallel(task_list):
     print(f"Found {len(task_list)} sessions. Starting extraction with {MAX_WORKERS} cores...")
     t0 = time.time()
 
-    accumulated_data = {reg: {ep: [] for ep in "Quiescent"} for reg in MY_REGIONS}
+    accumulated_data = {reg: {ep: [] for ep in ["Quiescent"]} for reg in MY_REGIONS}
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
