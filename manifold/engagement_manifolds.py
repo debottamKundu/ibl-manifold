@@ -37,9 +37,9 @@ MIN_TRIALS = 1  # Minimum trials per condition to include session
 
 # use reaction times rather than firstMovement times
 # NOTE: change this on the server
-with open("../data/processed/glm-hmm-output/glm_ouptut_all_animals.pkl", "rb") as f:
+with open("./data/processed/glm-hmm-output/glm_ouptut_all_animals.pkl", "rb") as f:
     trial_files = pkl.load(f)
-with open("../data/processed/glm-hmm-output/action_kernel_trials.pkl", "rb") as f:
+with open("./data/processed/glm-hmm-output/action_kernel_trials.pkl", "rb") as f:
     action_kernel_files = pkl.load(f)
 
 EPOCHS = {
@@ -153,10 +153,12 @@ def process_single_session(
 
     try:
         spikes, clusters = load_good_units(one_local, pid)
-        trials, trial_mask = load_trials_and_mask(
-            one_local, eid, exclude_unbiased=True, exclude_nochoice=True
-        )
-        trials = {k: v[trial_mask] for k, v in trials.items()}
+        # trials, trial_mask = load_trials_and_mask(
+        #     one_local, eid, exclude_unbiased=True, exclude_nochoice=True
+        # )
+        # trials = {k: v[trial_mask] for k, v in trials.items()}
+
+        _, _, trials = mrx.load_trials_and_plot(trial_files, action_kernel_files, eid)
 
         all_spike_ids = clusters["cluster_id"][spikes["clusters"]]
 
