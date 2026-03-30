@@ -78,7 +78,7 @@ def load_trials_and_plot(
             y="is_correct",
             # order=[0, 1],  # Forces engaged to be on the left
             # palette={"engaged": "#4C72B0", "disengaged": "#C44E52"},
-            capsize=0.1,  # Adds little caps to the error bars
+            capsize=0.1,
             errorbar=("ci", 95),
         )
 
@@ -395,10 +395,14 @@ def plot_cohort_rt_by_engagement(
     if state_idx == "proxy_state_label":
         states = ["engaged", "disengaged"]
     elif state_idx == "engagement_state":
-        states = [0, 1]
+        states = df_rt[state_idx].unique()
 
     fig, axes = plt.subplots(
-        nrows=2, ncols=2, figsize=(12, 8), sharex=True, gridspec_kw={"height_ratios": [3, 1]}
+        nrows=2,
+        ncols=len(states),
+        figsize=(6 * len(states), 8),
+        sharex=True,
+        gridspec_kw={"height_ratios": [3, 1]},
     )
     fig.suptitle(title, y=1.02, fontsize=14)
 
@@ -551,3 +555,158 @@ def clean_lmm_results(results_dict):
     master_df = master_df[["Model", "Effect (ms)", "StdErr (ms)", "z-score", "p-value", "Sig."]]
 
     return master_df
+
+
+def load_trials_sebi_engagement(
+    engagement_json,
+    action_kernel_files,
+    eid,
+    window_size=10,
+    state_idx="engagement_state",
+    plot=False,
+):
+
+    df = action_kernel_files[eid]
+    engagement = engagement_json[eid]
+    df["engagement"] = engagement
+
+    df_alt = df.copy()
+    df_alt = df_alt.reset_index(drop=True)
+    df_alt["rt_sec"] = df_alt["response_times"] - df_alt["stimOn_times"]
+
+    df_alt = df_alt[(df_alt["rt_sec"] >= 0.08) & (df_alt["rt_sec"] <= 2.0)].copy()
+    # df_alt = df_alt[(df_alt["rt_sec"] >= 0.08)].copy()
+    # df_alt["contrastRight"] = df_alt["contrastRight"].fillna(0)
+    # df_alt["contrastLeft"] = df_alt["contrastLeft"].fillna(0)
+    df_alt["stimulus_side"] = np.where(df_alt["contrastRight"].notna(), 1.0, -1.0)
+    df_alt["absolute_contrast"] = df_alt[["contrastRight", "contrastLeft"]].max(axis=1)
+
+    df_alt["expected_side"] = np.where(df_alt["prior"] > 0.5, -1.0, 1.0)
+    df_alt["internal_congruent"] = df_alt["expected_side"] == df_alt["stimulus_side"]
+    df_alt["Congruence_Label"] = df_alt["internal_congruent"].map(
+        {True: "Congruent", False: "Incongruent"}
+    )
+    df_alt["signed_contrast"] = df_alt["absolute_contrast"] * df_alt["stimulus_side"]
+
+    df_alt["Prior_Label"] = df_alt["expected_side"].map(
+        {-1.0: "Expects Left", 1.0: "Expects Right"}
+    )
+    ordered_contrasts = [-1.0, -0.25, -0.125, -0.0625, 0.0, 0.0625, 0.125, 0.25, 1.0]
+    contrast_mapping = {val: i for i, val in enumerate(ordered_contrasts)}
+    df_alt["contrast_ordinal"] = df_alt["signed_contrast"].map(contrast_mapping)
+
+    df_alt["is_correct"] = (df_alt["feedbackType"] == 1.0).astype(int)
+    engaged_threshold = 0.60
+
+    df_alt["rolling_accuracy"] = (
+        df_alt["is_correct"]
+        .shift(1)
+        .ewm(span=window_size, min_periods=1)
+        .mean()
+        # rolling(window=window_size, min_periods=1).mean()
+    )
+
+    df_alt["proxy_state_label"] = np.where(
+        df_alt["rolling_accuracy"] >= engaged_threshold, "engaged", "disengaged"
+    )
+    df_alt["proxy_state_label"] = df_alt["proxy_state_label"].fillna("engaged")
+
+    df_correct = df_alt[df_alt["feedbackType"] == 1.0].copy()
+    df_incorrect = df_alt[df_alt["feedbackType"] == -1.0].copy()
+
+    df_alt["is_correct"] = (df_alt["feedbackType"] == 1.0).astype(int)
+
+    # state_idx = "proxy_state_label"
+    if plot:
+        plt.figure(figsize=(6, 5))
+
+        sns.barplot(
+            data=df_alt,
+            x=state_idx,
+            y="is_correct",
+            # order=[0, 1],  # Forces engaged to be on the left
+            # palette={"engaged": "#4C72B0", "disengaged": "#C44E52"},
+            capsize=0.1,
+            errorbar=("ci", 95),
+        )
+
+        plt.title("Proportion Correct by Engagement State", pad=15)
+        plt.ylabel("Fraction Correct")
+        plt.xlabel("")  # Leave blank for cleaner look
+        plt.ylim(0, 1.05)  # Lock y-axis from 0 to 1
+        plt.axhline(0.5, color="black", linestyle="--", alpha=0.5)  # Add chance-level line
+
+        sns.despine()
+        plt.tight_layout()
+        plt.show()
+
+    return df_correct, df_incorrect, df_alt
+
+
+def run_all_behavioral_lmms_continuous(df_cohort, engagement_column="engagement_norm"):
+    """
+    Runs LMMs using a continuous engagement signal (0-1) instead of categories.
+    """
+
+    df = df_cohort.copy()
+
+    df[engagement_column] = pd.to_numeric(df[engagement_column])
+
+    avg_engagement = df[engagement_column].mean()
+    df["engagement_centered"] = df[engagement_column] - avg_engagement
+
+    print(f"Engagement Mean: {avg_engagement:.3f} (This is now your 0 point)\n")
+
+    df["Congruence_Label"] = df["Congruence_Label"].astype(str)
+    if "Accuracy_Label" not in df.columns:
+        df["Accuracy_Label"] = (
+            df["feedbackType"].map({1.0: "Correct", -1.0: "Incorrect"}).astype(str)
+        )
+
+    results_dict = {}
+
+    # --- MODEL 1: Main Effects ---
+    # Intercept = RT for a Congruent/Correct trial at AVERAGE engagement
+    print("============ Correct Trials: Main Effects ============")
+    formula_1 = (
+        "rt_sec ~ C(Congruence_Label, Treatment('Congruent')) + "
+        "engagement_centered + absolute_contrast"
+    )
+    mdl_1 = smf.mixedlm(
+        formula_1,
+        data=df[df["feedbackType"] == 1.0],
+        groups=df[df["feedbackType"] == 1.0]["animal_id"],
+    )
+    res_1 = mdl_1.fit()
+    print(res_1.summary())
+    results_dict["main_effects"] = res_1
+
+    # --- MODEL 2: Two-Way Interaction ---
+    # Does the speed-penalty of an Incongruent trial change as engagement moves away from average?
+    print("\n============ Correct Trials: 2-Way Interaction ============")
+    formula_2 = (
+        "rt_sec ~ C(Congruence_Label, Treatment('Congruent')) * "
+        "engagement_centered + absolute_contrast"
+    )
+    mdl_2 = smf.mixedlm(
+        formula_2,
+        data=df[df["feedbackType"] == 1.0],
+        groups=df[df["feedbackType"] == 1.0]["animal_id"],
+    )
+    res_2 = mdl_2.fit()
+    print(res_2.summary())
+    results_dict["2_way_interaction"] = res_2
+
+    # --- MODEL 3: Three-Way Interaction ---
+    print("\n============ All Trials: 3-Way Interaction ============")
+    formula_3 = (
+        "rt_sec ~ C(Congruence_Label, Treatment('Congruent')) * "
+        "engagement_centered * C(Accuracy_Label, Treatment('Correct')) + "
+        "absolute_contrast"
+    )
+    mdl_3 = smf.mixedlm(formula_3, data=df, groups=df["animal_id"])
+    res_3 = mdl_3.fit()
+    print(res_3.summary())
+    results_dict["3_way_interaction"] = res_3
+
+    return results_dict

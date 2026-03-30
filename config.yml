@@ -1,0 +1,53 @@
+# Data QC config
+unit_qc: 1 # minimum QC value for units to enter analysis (between 0 and 1)
+min_units: 5 # minimum number of units per region for a region to enter analysis
+min_trials: 150  # minimum number of trials for a session to be included in analysis
+min_rt: 0.08
+max_rt: null
+
+# Decoding config
+estimator: SoftmaxRegression  # possible values: LinearRegression, Lasso, Ridge, LogisticRegression, SoftmaxRegression
+estimator_kwargs: {tol: 0.0001, max_iter: 20000, fit_intercept: True}
+n_folds: 5
+binarization_value: null # to binarize the target -> could be useful with logistic regression estimator
+shuffle: True
+balanced_weighting: True
+save_predictions: True
+hparam_grid: {}
+
+# Neurometric curves config
+border_quantiles_neurometrics: [0.3, 0.7]  # [.3, .4, .5, .6, .7]
+compute_neuro_on_each_fold: False # if True, expect a script that is 5 times slower
+
+
+# regions
+stim_prior_regions : [
+        "VISp",
+        "MOs",
+        "SSp-ul",
+        "ACAd",
+        "PL",
+        "CP",
+        "VPM",
+        "MG",
+        "LGd",
+        "ZI",
+        "SNr",
+        "MRN",
+        "SCm",
+        "PAG",
+        "APN",
+        "RN",
+        "PPN",
+        "PRNc",
+        "PRNr",
+        "GRN",
+        "IRN",
+        "PGRN",
+        "CUL4 5",
+        "SIM",
+        "IP",
+    ]
+
+output_dir: "/usr/people/kundu/code/ibl-manifold/data/ephys"
+engagement_dir: "/usr/people/kundu/code/ibl-manifold/data/generated"
