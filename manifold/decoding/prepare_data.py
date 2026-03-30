@@ -65,11 +65,11 @@ def prepare_ephys(
     brainreg = BrainRegions()
     beryl_regions = brainreg.acronym2acronym(clusters["acronym"], mapping="Beryl")
     if isinstance(regions, str):
+        #if (
+        #    regions in config["region_defaults"].keys()
+        #):  # if regions is a key into the regions_default config dict
+        #    regions = config["region_defaults"][regions]
         if (
-            regions in config["region_defaults"].keys()
-        ):  # if regions is a key into the regions_default config dict
-            regions = config["region_defaults"][regions]
-        elif (
             regions == "single_regions"
         ):  # if single_regions, make a list of lists to decode every region separately
             regions = [[b] for b in np.unique(beryl_regions) if b not in ["root", "void"]]

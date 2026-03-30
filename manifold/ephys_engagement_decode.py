@@ -51,7 +51,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
         results_fit_session = fit_session_ephys(
             one=one,
             session_id=session_id,
-            subject="subject",
+            subject=subject,
             pids=pids,
             probe_names=probes,
             output_dir=output_dir,
