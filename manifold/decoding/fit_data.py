@@ -340,9 +340,9 @@ def make_summary_df(outdict):
     _weights = [
         np.mean(np.vstack(res["weights"]), axis=0) for res in fit_results
     ]  # mean weights over folds
-    _intercept = (
-        [np.mean(np.vstack(res["intercepts"]).squeeze(), axis=0) for res in fit_results],
-    )  # mean intercept over folds
+    _intercept = [
+        np.mean(np.vstack(res["intercepts"]).squeeze(), axis=0) for res in fit_results
+    ]  # mean intercept over folds
     _dict = dict(
         eid=[outdict["eid"] for _ in range(n_results)],
         subject=[outdict["subject"] for _ in range(n_results)],

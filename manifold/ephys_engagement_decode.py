@@ -39,10 +39,10 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
 
     pids, probes = one.eid2pid(session_id)
     trials, mask = load_trials_and_mask(
-        one, session_id, exclude_nochoice=True, exclude_unbiased=False
+        one, session_id, exclude_nochoice=False, exclude_unbiased=False
     )
     trials["engagement"] = engagement_signal
-    trials = trials[mask]
+    # trials = trials[mask]
     subject = bwm_df[bwm_df.eid == session_id].subject.iloc[0]
     results_dir = join(output_dir, subject, session_id)
     os.makedirs(results_dir, exist_ok=True)
@@ -56,11 +56,12 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             probe_names=probes,
             output_dir=output_dir,
             model="oracle",
-            pseudo_ids=[-1],
+            pseudo_ids=[-1, 1, 2],
             align_event="stimOn_times",
             time_window=(-0.6, -0.1),
             n_runs=10,
             trials_df=trials,
+            target="engagement",
         )
     except Exception as e:
         _log = "Something wrong -- Skipping session"
@@ -112,18 +113,16 @@ if __name__ == "__main__":
             bwm_df=bwm_df,
         )
 
-    for eid in list_of_eids:
-        engagement_signal = engagement_pickle[eid]
-        fit_engagement(
-            session_id=eid,
-            output_dir=config["output_dir"],
-            engagement_signal=engagement_signal,
-            bwm_df=bwm_df,
-        )
-        break
+    # for eid in list_of_eids:
+    #     engagement_signal = engagement_pickle[eid]
+    #     fit_engagement(
+    #         session_id=eid,
+    #         output_dir=config["output_dir"],
+    #         engagement_signal=engagement_signal,
+    #         bwm_df=bwm_df,
+    #     )
 
-    """
-    with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
 
         futures = {executor.submit(process_eid, eid): eid for eid in list_of_eids}
 
@@ -133,4 +132,3 @@ if __name__ == "__main__":
                 future.result()
             except Exception as exc:
                 print(f"Session {eid} generated an exception: {exc}")
-    """

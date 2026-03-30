@@ -162,6 +162,9 @@ def compute_beh_target(
     if "glm-hmm_" in target:
         return np.vstack(trials_df[target].values)
 
+    if target == "engagement":
+        return trials_df[target].values
+
     if (not istrained) and (target != "signcont") and (model != "oracle"):
         side, stim, act, _ = format_data(trials_df)
         stimuli, actions, stim_side = format_input([stim], [act], [side])

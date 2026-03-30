@@ -65,9 +65,9 @@ def prepare_ephys(
     brainreg = BrainRegions()
     beryl_regions = brainreg.acronym2acronym(clusters["acronym"], mapping="Beryl")
     if isinstance(regions, str):
-        #if (
+        # if (
         #    regions in config["region_defaults"].keys()
-        #):  # if regions is a key into the regions_default config dict
+        # ):  # if regions is a key into the regions_default config dict
         #    regions = config["region_defaults"][regions]
         if (
             regions == "single_regions"
@@ -218,6 +218,33 @@ def prepare_behavior(
 ):
     if pseudo_ids is None:
         pseudo_ids = [-1]  # -1 is always the actual session
+
+    if target == "engagement":
+        # plugged in ad hoc pseudosession
+        all_targets = []
+        all_trials = []
+
+        for pseudo_id in pseudo_ids:
+            if pseudo_id == -1:
+
+                all_trials.append(trials_df)
+                all_targets.append(trials_df["engagement"].values)
+            else:
+                # Pseudo session: Permute the engagement signal
+                # Use pseudo_id as the random seed so nulls are reproducible
+                np.random.seed(pseudo_id)
+
+                shuffled_target = np.random.permutation(trials_df["engagement"].values)
+
+                # Copy the trials dataframe so we don't overwrite the actual session's data
+                control_trials = trials_df.copy()
+                control_trials["engagement"] = shuffled_target
+
+                all_trials.append(control_trials)
+                all_targets.append(shuffled_target)
+
+        # Engagement doesn't have standard neurometrics, so return None for that
+        return all_trials, all_targets, trials_mask, None
 
     if behavior_path is None:
         behavior_path = output_dir.joinpath("behavior")
