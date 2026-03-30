@@ -54,7 +54,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             subject="subject",
             pids=pids,
             probe_names=probes,
-            output_dir=results_dir,
+            output_dir=output_dir,
             model="oracle",
             pseudo_ids=[-1],
             align_event="stimOn_times",
@@ -112,16 +112,17 @@ if __name__ == "__main__":
             bwm_df=bwm_df,
         )
 
-    # for eid in list_of_eids:
-    #     engagement_signal = engagement_pickle[eid]
-    #     fit_engagement(
-    #         one=one,
-    #         session_id=eid,
-    #         output_dir=config["output_dir"],
-    #         engagement_signal=engagement_signal,
-    #         bwm_df=bwm_df,
-    #     )
+    for eid in list_of_eids:
+        engagement_signal = engagement_pickle[eid]
+        fit_engagement(
+            session_id=eid,
+            output_dir=config["output_dir"],
+            engagement_signal=engagement_signal,
+            bwm_df=bwm_df,
+        )
+        break
 
+    """
     with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
 
         futures = {executor.submit(process_eid, eid): eid for eid in list_of_eids}
@@ -132,3 +133,4 @@ if __name__ == "__main__":
                 future.result()
             except Exception as exc:
                 print(f"Session {eid} generated an exception: {exc}")
+    """

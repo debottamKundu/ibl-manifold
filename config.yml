@@ -21,6 +21,7 @@ compute_neuro_on_each_fold: False # if True, expect a script that is 5 times slo
 
 
 # regions
+regions: single_regions
 stim_prior_regions : [
         "VISp",
         "MOs",
