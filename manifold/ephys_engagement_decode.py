@@ -122,7 +122,7 @@ if __name__ == "__main__":
     #         bwm_df=bwm_df,
     #     )
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=16) as executor:
 
         futures = {executor.submit(process_eid, eid): eid for eid in list_of_eids}
 
@@ -132,4 +132,3 @@ if __name__ == "__main__":
                 future.result()
             except Exception as exc:
                 print(f"Session {eid} generated an exception: {exc}")
-330338
