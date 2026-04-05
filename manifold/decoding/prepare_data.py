@@ -231,17 +231,22 @@ def prepare_behavior(
                 all_targets.append(trials_df["engagement"].values)
             else:
                 # Pseudo session: Permute the engagement signal
-                # Use pseudo_id as the random seed so nulls are reproducible
-                np.random.seed(pseudo_id)
 
-                shuffled_target = np.random.permutation(trials_df["engagement"].values)
+                np.random.seed(pseudo_id)
+                n_trials = len(trials_df["engagement"].values)
+                min_shift = int(0.15 * n_trials)
+                max_shift = int(0.85 * n_trials)
+                shift = np.random.randint(min_shift, max_shift)
+
+                # shuffled_target = np.random.permutation(trials_df["engagement"].values)
 
                 # Copy the trials dataframe so we don't overwrite the actual session's data
                 control_trials = trials_df.copy()
-                control_trials["engagement"] = shuffled_target
+                shifted_target = np.roll(trials_df["engagement"].values, shift)
+                control_trials["engagement"] = shifted_target
 
                 all_trials.append(control_trials)
-                all_targets.append(shuffled_target)
+                all_targets.append(shifted_target)
 
         # Engagement doesn't have standard neurometrics, so return None for that
         return all_trials, all_targets, trials_mask, None
