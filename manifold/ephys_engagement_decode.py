@@ -47,6 +47,8 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
     results_dir = join(output_dir, subject, session_id)
     os.makedirs(results_dir, exist_ok=True)
 
+    pseduosessions = np.arange(0, 100)
+    pseduosessions_argument = np.concat([[-1], pseduosessions])
     try:
         results_fit_session = fit_session_ephys(
             one=one,
@@ -56,7 +58,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             probe_names=probes,
             output_dir=output_dir,
             model="oracle",
-            pseudo_ids=[-1, 1, 2],
+            pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
             time_window=(-0.6, -0.1),
             n_runs=10,
@@ -122,7 +124,7 @@ if __name__ == "__main__":
     #         bwm_df=bwm_df,
     #     )
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=16) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
 
         futures = {executor.submit(process_eid, eid): eid for eid in list_of_eids}
 
