@@ -47,7 +47,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
     results_dir = join(output_dir, subject, session_id)
     os.makedirs(results_dir, exist_ok=True)
 
-    pseduosessions = np.arange(0, 100)
+    pseduosessions = np.arange(1, 101)
     pseduosessions_argument = np.concat([[-1], pseduosessions])
     try:
         results_fit_session = fit_session_ephys(
