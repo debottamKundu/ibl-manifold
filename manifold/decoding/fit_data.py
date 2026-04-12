@@ -139,12 +139,14 @@ def fit_session_ephys(
                 sl = SessionLoader(one, session_id)
                 trials_df = sl.load_trials()
             trials_df = trials_df.to_df()
+
     trials_mask = compute_mask(
         trials_df,
         align_event=align_event,
         min_rt=config["min_rt"],
         max_rt=config["max_rt"],
         n_trials_crop_end=0,
+        keep_timeout_trials=True,  # keeps all timeout trials,but also fast trials.
     )
     if sum(trials_mask) <= config["min_trials"]:
         raise ValueError(
@@ -402,8 +404,10 @@ def fit_target(
     for targets, trials, neurometrics, pseudo_id in zip(
         all_targets, all_trials, all_neurometrics, pseudo_ids
     ):
+        n_runs_null = 2  # speed up run
+        current_n_runs = n_runs if pseudo_id == -1 else n_runs_null
         # run decoders
-        for i_run in range(n_runs):
+        for i_run in range(current_n_runs):
             rng_seed = i_run if integration_test else None
             fit_result = decode_cv(
                 ys=targets,

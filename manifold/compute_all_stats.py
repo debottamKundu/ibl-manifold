@@ -150,7 +150,7 @@ if __name__ == "__main__":
     Q_LEVEL = 0.05
     N_PSEUDO = 100
 
-    data_dir = "./data/ephys/proper_pseudosessions/"
+    data_dir = "./data/ephys/"
     finished = glob(data_dir + "/*/*/*.pqt")
 
     resultsdf = load_and_combine_df(finished)

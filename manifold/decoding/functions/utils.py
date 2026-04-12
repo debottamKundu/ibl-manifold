@@ -11,7 +11,14 @@ from .estimators import SoftmaxRegression
 logger = logging.getLogger("decoding")
 
 
-def compute_mask(trials_df, align_event, min_rt=0.08, max_rt=None, n_trials_crop_end=0):
+def compute_mask(
+    trials_df,
+    align_event,
+    min_rt=0.08,
+    max_rt=None,
+    n_trials_crop_end=0,
+    keep_timeout_trials=False,
+):
     """Create a mask that denotes "good" trials which will be used for further analysis.
 
     Parameters
@@ -47,19 +54,17 @@ def compute_mask(trials_df, align_event, min_rt=0.08, max_rt=None, n_trials_crop
     mask = trials_df[align_event].notna()
 
     # ensure animal has moved
-    mask = mask & trials_df.firstMovement_times.notna()
+    if not keep_timeout_trials:
+        mask = mask & trials_df.firstMovement_times.notna()
 
-    # keep trials with reasonable reaction times
-    if min_rt is not None:
-        mask = mask & (~(react_times < min_rt)).values
-    if max_rt is not None:
-        mask = mask & (~(react_times > max_rt)).values
+        # keep trials with reasonable reaction times
+        if min_rt is not None:
+            mask = mask & (~(react_times < min_rt)).values
+        if max_rt is not None:
+            mask = mask & (~(react_times > max_rt)).values
 
-    # get rid of trials where animal does not respond
-    mask = mask & (trials_df.choice != 0)
-
-    if n_trials_crop_end > 0:
-        mask[-int(n_trials_crop_end) :] = False
+        # get rid of trials where animal does not respond
+        mask = mask & (trials_df.choice != 0)
 
     return mask
 

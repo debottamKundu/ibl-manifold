@@ -31,15 +31,23 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
     # i can load trials as normal
 
     one = ONE(
-        base_url="https://openalyx.internationalbrainlab.org",
-        password="international",
+        # base_url="https://openalyx.internationalbrainlab.org",
+        # password="international",
         silent=True,
-        username="intbrainlab",
+        # username="intbrainlab",
+        mode="local",
     )
+    # try to make it local
+    session_data = bwm_df[bwm_df["eid"] == session_id]
+    pids = session_data["pid"].tolist()
+    probes = session_data["probe_name"].tolist()
+    # pids, probes = one.eid2pid(session_id)
 
-    pids, probes = one.eid2pid(session_id)
     trials, mask = load_trials_and_mask(
-        one, session_id, exclude_nochoice=False, exclude_unbiased=False
+        one,
+        session_id,
+        exclude_nochoice=False,
+        exclude_unbiased=False,  # should include no-choice trials
     )
     trials["engagement"] = engagement_signal
     # trials = trials[mask]
@@ -61,7 +69,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
             time_window=(-0.6, -0.1),
-            n_runs=10,
+            n_runs=10,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
             target="engagement",
         )
