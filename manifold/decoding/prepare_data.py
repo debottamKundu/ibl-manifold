@@ -58,8 +58,8 @@ def prepare_ephys(
     )
 
     # This allows us to just stage the data without running the analysis, we can then switch ONE in local mode
-    if stage_only:
-        return None, None
+    # if stage_only:
+    #     return None, None
 
     # Prepare list of brain regions
     brainreg = BrainRegions()
