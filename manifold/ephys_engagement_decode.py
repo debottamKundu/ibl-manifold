@@ -99,6 +99,8 @@ if __name__ == "__main__":
     relevant_pids = units_df[units_df["Beryl"].isin(MY_REGIONS)]["pid"].unique()
 
     bwm_df = bwm_query(one)
+    runonalleids = bwm_df["eid"].unique()
+    # change subset df: use all valid eids
     subset_df = bwm_df[bwm_df["pid"].isin(relevant_pids)]
     list_of_eids = subset_df["eid"].unique()
 
@@ -123,22 +125,20 @@ if __name__ == "__main__":
             bwm_df=bwm_df,
         )
 
-    # for eid in list_of_eids:
-    #     engagement_signal = engagement_pickle[eid]
-    #     fit_engagement(
-    #         session_id=eid,
-    #         output_dir=config["output_dir"],
-    #         engagement_signal=engagement_signal,
-    #         bwm_df=bwm_df,
-    #     )
+    # run a single one
+    process_eid(list_of_eids[0])
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+    multiprocess = False
+    if multiprocess:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
 
-        futures = {executor.submit(process_eid, eid): eid for eid in list_of_eids}
+            futures = {
+                executor.submit(process_eid, eid): eid for eid in runonalleids
+            }  # NOTE: check which list we are passing
 
-        for future in concurrent.futures.as_completed(futures):
-            eid = futures[future]
-            try:
-                future.result()
-            except Exception as exc:
-                print(f"Session {eid} generated an exception: {exc}")
+            for future in concurrent.futures.as_completed(futures):
+                eid = futures[future]
+                try:
+                    future.result()
+                except Exception as exc:
+                    print(f"Session {eid} generated an exception: {exc}")

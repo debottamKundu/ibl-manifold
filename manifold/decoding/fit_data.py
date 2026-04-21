@@ -405,7 +405,7 @@ def fit_target(
         all_targets, all_trials, all_neurometrics, pseudo_ids
     ):
         n_runs_null = 2  # speed up run
-        current_n_runs = n_runs if pseudo_id == -1 else n_runs_null
+        current_n_runs = n_runs if pseudo_id == -1 else n_runs_null # NOTE: This reduces the number of runs for 
         # run decoders
         for i_run in range(current_n_runs):
             rng_seed = i_run if integration_test else None

@@ -14,7 +14,7 @@ from brainbox.behavior.dlc import get_licks
 from brainwidemap.bwm_loading import load_good_units, merge_probes
 from behavior_models.utils import format_data, format_input
 from behavior_models.models import ActionKernel, StimulusKernel
-
+import pickle as pkl
 from .functions.behavior_targets import optimal_Bayesian, compute_beh_target
 from .functions.utils import (
     check_bhv_fit_exists,
@@ -215,6 +215,7 @@ def prepare_behavior(
     compute_neurometrics=False,
     integration_test=False,
     behavior_path=None,
+    kind_of_pseudo="true_pseudo",
 ):
     if pseudo_ids is None:
         pseudo_ids = [-1]  # -1 is always the actual session
@@ -223,6 +224,12 @@ def prepare_behavior(
         # plugged in ad hoc pseudosession
         all_targets = []
         all_trials = []
+        if kind_of_pseudo == "true_pseudo":
+            pseudosession_trial_location = f"/usr/people/kundu/code/ibl-manifold/data/generated/engagement_pseudosessions/{session_id}.pqt"
+            engagement_pseudosession_location = f"/usr/people/kundu/code/ibl-manifold/data/processed/motivation_scalars/{session_id}.pkl"
+            control_trials_all = pd.read_parquet(pseudosession_trial_location)
+            with open(engagement_pseudosession_location, "rb") as f:
+                engagement_pseudo_dict = pkl.load(f)
 
         for pseudo_id in pseudo_ids:
             if pseudo_id == -1:
@@ -231,19 +238,25 @@ def prepare_behavior(
                 all_targets.append(trials_df["engagement"].values)
             else:
                 # Pseudo session: Permute the engagement signal
+                if kind_of_pseudo == "linear_shift":
+                    np.random.seed(pseudo_id)
+                    n_trials = len(trials_df["engagement"].values)
+                    min_shift = int(0.15 * n_trials)
+                    max_shift = int(0.85 * n_trials)
+                    shift = np.random.randint(min_shift, max_shift)
 
-                np.random.seed(pseudo_id)
-                n_trials = len(trials_df["engagement"].values)
-                min_shift = int(0.15 * n_trials)
-                max_shift = int(0.85 * n_trials)
-                shift = np.random.randint(min_shift, max_shift)
+                    # shuffled_target = np.random.permutation(trials_df["engagement"].values)
 
-                # shuffled_target = np.random.permutation(trials_df["engagement"].values)
-
-                # Copy the trials dataframe so we don't overwrite the actual session's data
-                control_trials = trials_df.copy()
-                shifted_target = np.roll(trials_df["engagement"].values, shift)
-                control_trials["engagement"] = shifted_target
+                    # Copy the trials dataframe so we don't overwrite the actual session's data
+                    control_trials = trials_df.copy()
+                    shifted_target = np.roll(trials_df["engagement"].values, shift)
+                    control_trials["engagement"] = shifted_target
+                elif kind_of_pseudo == "true_pseudo":
+                    # load based on eid and pseudo-id
+                    control_trials = control_trials_all[
+                        control_trials_all["session_number"] == pseudo_id - 1
+                    ]  # because of no 0s in pseudo-id
+                    shifted_target = engagement_pseudo_dict[pseudo_id]
 
                 all_trials.append(control_trials)
                 all_targets.append(shifted_target)
