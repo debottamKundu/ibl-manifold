@@ -31,11 +31,11 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
     # i can load trials as normal
 
     one = ONE(
-        # base_url="https://openalyx.internationalbrainlab.org",
-        # password="international",
+        base_url="https://openalyx.internationalbrainlab.org",
+        password="international",
         silent=True,
-        # username="intbrainlab",
-        mode="local",
+        username="intbrainlab",
+        # mode="local",
     )
     # try to make it local
     session_data = bwm_df[bwm_df["eid"] == session_id]
@@ -72,6 +72,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             n_runs=10,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
             target="engagement",
+            stage_only=True,
         )
     except Exception as e:
         _log = "Something wrong -- Skipping session"
