@@ -56,7 +56,7 @@ def load_and_combine_df(finished):
     return resultsdf
 
 
-def compute_stats_over_pseudo_ids(group, n_pseudo=2):
+def compute_stats_over_pseudo_ids(group, n_pseudo=100):
     """Aggregate info over pseudo_ids."""
     result = pd.Series(dtype="float64")
 
@@ -102,11 +102,11 @@ def reformat_df(df):
     return df_new
 
 
-def significance_by_region(group):
+def significance_by_region(group, min_trials=50, min_sessions_per_region=2, alpha_level=0.05):
     result = pd.Series()
     # only get p-values for sessions with min number of trials
     if "n_trials" in group:
-        trials_mask = group["n_trials"] >= MIN_TRIALS
+        trials_mask = group["n_trials"] >= min_trials
     else:
         trials_mask = np.ones(group.shape[0]).astype("bool")
     pvals = group.loc[trials_mask, "p-value"].values
@@ -115,7 +115,7 @@ def significance_by_region(group):
     n_sessions = len(pvals)
     result["n_sessions"] = n_sessions
     # only compute combined p-value if there are enough sessions
-    if n_sessions < MIN_SESSIONS_PER_REGION:
+    if n_sessions < min_sessions_per_region:
         result["pval_combined"] = np.nan
         result["n_units_mean"] = np.nan
         result["values_std"] = np.nan
@@ -135,9 +135,9 @@ def significance_by_region(group):
         result["valuesminusnull_median"] = (
             result["values_median"] - result["null_median_of_medians"]
         )
-        result["frac_sig"] = np.mean(pvals < ALPHA_LEVEL)
-        result["values_median_sig"] = np.median(scores[pvals < ALPHA_LEVEL])
-        result["sig_combined"] = result["pval_combined"] < ALPHA_LEVEL
+        result["frac_sig"] = np.mean(pvals < alpha_level)
+        result["values_median_sig"] = np.median(scores[pvals < alpha_level])
+        result["sig_combined"] = result["pval_combined"] < alpha_level
     return result
 
 

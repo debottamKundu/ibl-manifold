@@ -46,7 +46,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
     trials, mask = load_trials_and_mask(
         one,
         session_id,
-        exclude_nochoice=False,
+        exclude_nochoice=True,
         exclude_unbiased=False,  # should include no-choice trials
     )
     trials["engagement"] = engagement_signal
@@ -69,7 +69,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
             time_window=(-0.6, -0.1),
-            n_runs=10,  # reduce this maybe : or change this based on pseudoids
+            n_runs=2,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
             target="engagement",
             stage_only=True,

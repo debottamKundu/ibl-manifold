@@ -225,8 +225,9 @@ def prepare_behavior(
         all_targets = []
         all_trials = []
         if kind_of_pseudo == "true_pseudo":
-            pseudosession_trial_location = f"/usr/people/kundu/code/ibl-manifold/data/generated/engagement_pseudosessions/{session_id}.pqt"
-            engagement_pseudosession_location = f"/usr/people/kundu/code/ibl-manifold/data/processed/motivation_scalars/{session_id}.pkl"
+            # NOTE: Change this now that we have zeta new fits
+            pseudosession_trial_location = f"/usr/people/kundu/code/ibl-manifold/data/generated/engagement_pseudosessions_zeta/{session_id}.pqt"
+            engagement_pseudosession_location = f"/usr/people/kundu/code/ibl-manifold/data/processed/motivation_scalars_zeta/{session_id}.pkl"
             control_trials_all = pd.read_parquet(pseudosession_trial_location)
             with open(engagement_pseudosession_location, "rb") as f:
                 engagement_pseudo_dict = pkl.load(f)

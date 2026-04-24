@@ -146,7 +146,7 @@ def fit_session_ephys(
         min_rt=config["min_rt"],
         max_rt=config["max_rt"],
         n_trials_crop_end=0,
-        keep_timeout_trials=True,  # keeps all timeout trials,but also fast trials.
+        keep_timeout_trials=False,  # keeps all timeout trials,but also fast trials.
     )
     if sum(trials_mask) <= config["min_trials"]:
         raise ValueError(
