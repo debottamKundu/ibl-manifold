@@ -20,10 +20,16 @@ from brainbox.io.one import SessionLoader
 
 from .prepare_data import prepare_ephys, prepare_behavior, prepare_motor, prepare_pupil
 from .functions.neurometric import get_neurometric_parameters
-from .functions.utils import check_inputs, check_config_decoding, compute_mask
+from .functions.utils import (
+    add_congruence,
+    check_inputs,
+    check_config_decoding,
+    compute_mask,
+    compute_congruency_splits,
+)
 
 # Set up logger
-logger = logging.getLogger("decoding")
+logger = logging.getLogger("decoding_feedback_from_iti")
 # Load and check configuration file
 config = check_config_decoding()
 
@@ -51,8 +57,9 @@ def fit_session_ephys(
     return_ephys=False,
     save_splits=False,
     fit_residuals=None,
-    tanh_transform=False,
-    neurometric_split="engagement",
+    split_by_congruency=False,
+    congruency_subsamples=10,
+    trials_mask=None,
 ):
     """
     Fits a single session for ephys data.
@@ -142,37 +149,40 @@ def fit_session_ephys(
                 trials_df = sl.load_trials()
             trials_df = trials_df.to_df()
 
-    trials_mask = compute_mask(
-        trials_df,
-        align_event=align_event,
-        min_rt=config["min_rt"],
-        max_rt=config["max_rt"],
-        n_trials_crop_end=0,
-        keep_timeout_trials=False,  # keeps all timeout trials,but also fast trials.
-    )
+    if trials_mask is None:
+        trials_mask = compute_mask(
+            trials_df,
+            align_event=align_event,
+            min_rt=config["min_rt"],
+            max_rt=config["max_rt"],
+            n_trials_crop_end=0,
+            keep_timeout_trials=False,  # keeps all timeout trials,but also fast trials.
+        )
+
     trials_mask = trials_mask.values
     if sum(trials_mask) <= config["min_trials"]:
         raise ValueError(
             f"Session {session_id} has {sum(trials_mask)} good trials, less than {config['min_trials']}."
         )
 
+    # for feedback decoding
+    if split_by_congruency:
+        mask_dict = compute_congruency_splits(
+            trials_df, trials_mask, n_subsamples=congruency_subsamples
+        )
+    else:
+        mask_dict = {"all": trials_mask}
+
     # Prepare ephys data
     intervals = np.vstack(
         [trials_df[align_event] + time_window[0], trials_df[align_event] + time_window[1]]
     ).T
-    if "engagement" in target:
-        regions = config["regions"]
-    elif "signcont" in target:
-        regions = config["stim_regions"]
-    elif "feedback" in target:
-        raise ValueError("this should reroute to fit-data-feedback; what is happening?")
-
     data_epoch, actual_regions = prepare_ephys(
         one,
         session_id,
         pids,
         probe_names,
-        regions,  # changed from config['regions']
+        config["regions"],
         intervals,
         qc=config["unit_qc"],
         min_units=config["min_units"],
@@ -187,7 +197,7 @@ def fit_session_ephys(
         print(f"Decoding from {', '.join(['_'.join(r) for r in actual_regions])}")
 
     # Compute or load behavior targets
-    all_trials, all_targets, trials_mask, all_neurometrics = prepare_behavior(
+    all_trials, all_targets, trials_mask, pseudo_congruence = prepare_behavior(
         session_id,
         subject,
         trials_df,
@@ -199,9 +209,8 @@ def fit_session_ephys(
         compute_neurometrics=compute_neurometrics,
         integration_test=integration_test,
         behavior_path=behavior_path,
-        tanh_transform=tanh_transform,
-        neurometric_split=neurometric_split,
     )
+    # returns pseudocongruence instead of neurometrics if target is feedback
 
     # Remove the motor residuals from the targets if indicated
     # if motor_residuals:
@@ -269,16 +278,26 @@ def fit_session_ephys(
     session_dir = output_dir.joinpath(subject, session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
     pseudo_targets = []
+    pseudo_congruence_array = []
     all_targets = [np.reshape(t, (-1, 1)) if not len(t[0].shape) else t for t in all_targets]
+    all_pseudo = [np.reshape(t, (-1, 1)) if not len(t[0].shape) else t for t in pseudo_congruence]  # type: ignore
+    print(len(all_pseudo))
+    print(len(all_targets))
     for t, pseudo_id in zip(all_targets, pseudo_ids):
         if pseudo_id == -1:
             np.save(session_dir.joinpath("targets_real.npy"), t[trials_mask])
+            congruence_real = add_congruence(trials_df[trials_mask])
+            np.save(session_dir.joinpath("congruence_real.npy"), congruence_real)
         else:
             pseudo_targets.append(t[trials_mask])
+            pseudo_congruence_array.append(
+                all_pseudo[pseudo_id - 1][trials_mask]
+            )  # since we don't store the vongruence of the real one?
 
     n_pseudo = len(pseudo_targets)
     if n_pseudo:
         np.save(session_dir.joinpath("targets_pseudo.npy"), np.stack(pseudo_targets))
+        np.save(session_dir.joinpath("congruence_pseudo.npy"), np.stack(pseudo_congruence_array))
 
     # Otherwise fit per region
     filenames = []
@@ -295,54 +314,58 @@ def fit_session_ephys(
                 data = np.concatenate([data, extra], axis=1)
 
         # Fit
-        print(f"\n  Decoding from {len(data_region[0])} neurons in {'_'.join(region)}")
-        fit_results = fit_target(
-            data[trials_mask],
-            [t[trials_mask] for t in all_targets],
-            all_trials,
-            n_runs,
-            all_neurometrics,
-            pseudo_ids,
-            integration_test=integration_test,
-            save_splits=save_splits,
-        )
-
-        # Create output paths and save
-        region_str = "_".join(region)
-
-        outdict = {
-            "fit": fit_results,
-            "subject": subject,
-            "eid": session_id,
-            "probe": probe_str,
-            "region": region,
-            "N_units": data_region.shape[1],
-            "nb_trials": trials_mask.sum(),
-        }
-
-        # save the predictions for the actual session
-        # (n_runs, nb_trials)
-        _pred = np.stack(
-            [res["predictions_test"] for res in fit_results if res["pseudo_id"] == -1]
-        )
-        np.save(session_dir.joinpath(f"{region_str}_predictions_real.npy"), _pred)
-        _shape = _pred[0].shape
-
-        # save the predictions for the pseudo sessions
-        # (n_pseudo, n_runs, nb_trials)
-        if n_pseudo:
-            _pred = np.stack(
-                [res["predictions_test"] for res in fit_results if res["pseudo_id"] != -1]
+        # change here:
+        for condition_name, condition_mask in mask_dict.items():
+            print(f"\n  Decoding from {len(data_region[0])} neurons in {'_'.join(region)}")
+            fit_results = fit_target(
+                data[condition_mask],  # type: ignore
+                [t[condition_mask] for t in all_targets],  # U
+                all_trials,
+                n_runs,
+                None,  # all neurometrics
+                pseudo_ids,
+                integration_test=integration_test,
+                save_splits=save_splits,
             )
-            _pred = _pred.reshape(n_pseudo, n_runs, *_shape)
-            np.save(session_dir.joinpath(f"{region_str}_predictions_pseudo.npy"), _pred)
 
-        # for each decoding (session, region) produce some summary of the results
-        # including R2 scores and weights
-        filename = session_dir.joinpath(f"{region_str}_decoding_summary.pqt")
-        _df = make_summary_df(outdict)
-        _df.to_parquet(filename)
-        filenames.append(filename)
+            # Create output paths and save
+            region_str = f"{'_'.join(region)}_{condition_name}"
+
+            outdict = {
+                "fit": fit_results,
+                "subject": subject,
+                "eid": session_id,
+                "probe": probe_str,
+                "region": region,
+                "N_units": data_region.shape[1],
+                # "nb_trials": trials_mask.sum(),
+                "nb_trials": condition_mask.sum(),  # type: ignore
+                "condition": condition_name,
+            }
+
+            # save the predictions for the actual session
+            # (n_runs, nb_trials)
+            _pred = np.stack(
+                [res["predictions_test"] for res in fit_results if res["pseudo_id"] == -1]
+            )
+            np.save(session_dir.joinpath(f"{region_str}_predictions_real.npy"), _pred)
+            _shape = _pred[0].shape
+
+            # save the predictions for the pseudo sessions
+            # (n_pseudo, n_runs, nb_trials)
+            if n_pseudo:
+                _pred = np.stack(
+                    [res["predictions_test"] for res in fit_results if res["pseudo_id"] != -1]
+                )
+                _pred = _pred.reshape(n_pseudo, n_runs, *_shape)
+                np.save(session_dir.joinpath(f"{region_str}_predictions_pseudo.npy"), _pred)
+
+            # for each decoding (session, region) produce some summary of the results
+            # including R2 scores and weights
+            filename = session_dir.joinpath(f"{region_str}_decoding_summary.pqt")
+            _df = make_summary_df(outdict)
+            _df.to_parquet(filename)
+            filenames.append(filename)
 
     if return_ephys:
         return filenames, list(zip(actual_regions, data_epoch))
@@ -361,6 +384,7 @@ def make_summary_df(outdict):
     ]  # mean intercept over folds
     _dict = dict(
         eid=[outdict["eid"] for _ in range(n_results)],
+        condition=[outdict.get("condition", "all") for _ in range(n_results)],
         subject=[outdict["subject"] for _ in range(n_results)],
         probe=[outdict["probe"] for _ in range(n_results)],
         region=["_".join(outdict["region"]) for _ in range(n_results)],
@@ -371,87 +395,6 @@ def make_summary_df(outdict):
         nb_trials=[len(res["target"]) for res in fit_results],
         weights=_weights,
         intercept=_intercept,
-        low_pars=[
-            res["full_neurometric"]["low_pars"] if res["full_neurometric"] else np.nan
-            for res in fit_results
-        ],
-        high_pars=[
-            res["full_neurometric"]["high_pars"] if res["full_neurometric"] else np.nan
-            for res in fit_results
-        ],
-        q1_pars=[
-            (
-                res["full_neurometric"].get("quantile_0_pars", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q4_pars=[
-            (
-                res["full_neurometric"].get("quantile_3_pars", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q2_pars=[
-            (
-                res["full_neurometric"].get("quantile_1_pars", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q3_pars=[
-            (
-                res["full_neurometric"].get("quantile_2_pars", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q1_slope=[
-            (
-                res["full_neurometric"].get("quantile_0_slope", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q2_slope=[
-            (
-                res["full_neurometric"].get("quantile_1_slope", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q3_slope=[
-            (
-                res["full_neurometric"].get("quantile_2_slope", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        q4_slope=[
-            (
-                res["full_neurometric"].get("quantile_3_slope", np.nan)
-                if res["full_neurometric"]
-                else np.nan
-            )
-            for res in fit_results
-        ],
-        low_slope=[
-            res["full_neurometric"]["low_slope"] if res["full_neurometric"] else np.nan
-            for res in fit_results
-        ],
-        high_slope=[
-            res["full_neurometric"]["high_slope"] if res["full_neurometric"] else np.nan
-            for res in fit_results
-        ],
-        # saving too much, there's give.
     )
     df = pd.DataFrame(_dict)
     return df
@@ -517,7 +460,7 @@ def fit_target(
                 shuffle=config["shuffle"],
                 balanced_weight=config["balanced_weighting"],
                 rng_seed=rng_seed,
-                use_cv_sklearn_method=config["use_native_sklearn_for_hyperparam_estimation"],
+                use_cv_sklearn_method=False,
                 save_splits=save_splits,
             )
 
@@ -525,7 +468,7 @@ def fit_target(
             fit_result["pseudo_id"] = pseudo_id
             fit_result["run_id"] = i_run
 
-            if neurometrics is not None:
+            if neurometrics:
                 fit_result["full_neurometric"], fit_result["fold_neurometric"] = (
                     get_neurometric_parameters(
                         fit_result,
@@ -725,6 +668,7 @@ def decode_cv(
                         )
 
                         # initialize model
+
                         model_inner = estimator(**{**estimator_kwargs, key: alpha})
                         # fit model
                         model_inner.fit(X_train_inner, y_train_inner, sample_weight=sample_weight)

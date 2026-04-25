@@ -17,6 +17,7 @@ from behavior_models.models import ActionKernel, StimulusKernel
 import pickle as pkl
 from .functions.behavior_targets import optimal_Bayesian, compute_beh_target
 from .functions.utils import (
+    add_congruence,
     check_bhv_fit_exists,
     average_data_in_epoch,
     check_config_decoding,
@@ -216,6 +217,8 @@ def prepare_behavior(
     integration_test=False,
     behavior_path=None,
     kind_of_pseudo="true_pseudo",
+    tanh_transform=False,
+    neurometric_split="engagement",
 ):
     if pseudo_ids is None:
         pseudo_ids = [-1]  # -1 is always the actual session
@@ -226,8 +229,8 @@ def prepare_behavior(
         all_trials = []
         if kind_of_pseudo == "true_pseudo":
             # NOTE: Change this now that we have zeta new fits
-            pseudosession_trial_location = f"/usr/people/kundu/code/ibl-manifold/data/generated/engagement_pseudosessions_zeta/{session_id}.pqt"
-            engagement_pseudosession_location = f"/usr/people/kundu/code/ibl-manifold/data/processed/motivation_scalars_zeta/{session_id}.pkl"
+            pseudosession_trial_location = f"/usr/people/kundu/code/ibl-manifold/data/generated/engagement_pseudosessions_200/{session_id}.pqt"
+            engagement_pseudosession_location = f"/usr/people/kundu/code/ibl-manifold/data/processed/motivation_scalars_200/{session_id}.pkl"
             control_trials_all = pd.read_parquet(pseudosession_trial_location)
             with open(engagement_pseudosession_location, "rb") as f:
                 engagement_pseudo_dict = pkl.load(f)
@@ -289,12 +292,16 @@ def prepare_behavior(
 
     all_targets = []
     all_trials = []
+    if target == "feedback":
+        pseudo_congruence = []
     # For all sessions (pseudo and or actual session) compute the behavioral targets
     for pseudo_id in pseudo_ids:
         if pseudo_id == -1:  # this is the actual session
             all_trials.append(trials_df)
             all_targets.append(
-                compute_beh_target(trials_df, session_id, subject, model, target, behavior_path)
+                compute_beh_target(
+                    trials_df, session_id, subject, model, target, behavior_path, tanh_transform
+                )
             )
         else:
             if (
@@ -304,12 +311,24 @@ def prepare_behavior(
             control_trials = generate_null_distribution_session(
                 trials_df, session_id, subject, model, behavior_path
             )
+            if "engagement" in trials_df.columns:
+                control_trials["engagement"] = trials_df["engagement"].values
             all_trials.append(control_trials)
             all_targets.append(
                 compute_beh_target(
-                    control_trials, session_id, subject, model, target, behavior_path
+                    control_trials,
+                    session_id,
+                    subject,
+                    model,
+                    target,
+                    behavior_path,
+                    tanh_transform,
                 )
             )
+            if target == "feedback":
+                pseudo_congruence.append(add_congruence(control_trials))
+    if target == "feedback":
+        return all_trials, all_targets, trials_mask, pseudo_congruence
 
     # Compute neurometrics if indicated
     if compute_neurometrics:
@@ -318,6 +337,20 @@ def prepare_behavior(
             neurometrics = compute_neurometric_prior(
                 all_trials[i], session_id, subject, model, behavior_path
             )
+
+            if neurometric_split == "engagement":
+                if "engagement" not in neurometrics.columns:
+                    raise ValueError("Engagement signal must be in trials_df to split by it.")
+                med_eng = np.nanmedian(neurometrics["engagement"])
+                neurometrics["blockprob_neurometric"] = (
+                    neurometrics["engagement"] > med_eng
+                ).astype(int)
+            elif neurometric_split == "engagement_quartiles":
+                if "engagement" not in neurometrics.columns:
+                    raise ValueError("Engagement signal must be in trials_df to split by it.")
+                neurometrics["blockprob_neurometric"] = pd.qcut(
+                    neurometrics["engagement"], 4, labels=False, duplicates="drop"
+                )
             all_neurometrics.append(neurometrics[trials_mask].reset_index(drop=True))
     else:
         all_neurometrics = None

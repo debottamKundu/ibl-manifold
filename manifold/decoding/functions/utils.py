@@ -54,7 +54,7 @@ def compute_mask(
     mask = trials_df[align_event].notna()
 
     # ensure animal has moved
-    if not keep_timeout_trials:
+    if keep_timeout_trials == False:
         mask = mask & trials_df.firstMovement_times.notna()
 
         # keep trials with reasonable reaction times
@@ -286,3 +286,52 @@ def subtract_motor_residuals(motor_signals, all_targets, trials_mask):
         new_targets.append(target_data - motor)
 
     return new_targets, trials_mask
+
+
+def compute_congruency_splits(trials_df, base_mask, n_subsamples=10, seed=42):
+    """
+    Identifies congruent vs incongruent trials and generates matched subsamples.
+    Returns a dictionary of masks to be iterated over.
+    """
+
+    is_left_stim = ~np.isnan(trials_df["contrastLeft"])
+    is_right_stim = ~np.isnan(trials_df["contrastRight"])
+    is_left_block = trials_df["probabilityLeft"] > 0.5
+    is_right_block = trials_df["probabilityLeft"] < 0.5
+
+    congruent_mask = (is_left_stim & is_left_block) | (is_right_stim & is_right_block)
+    incongruent_mask = (is_left_stim & is_right_block) | (is_right_stim & is_left_block)
+
+    valid_cong = np.where(base_mask & congruent_mask)[0]
+    valid_incong = np.where(base_mask & incongruent_mask)[0]
+
+    min_n = min(len(valid_cong), len(valid_incong))
+    if min_n == 0:
+        raise ValueError("Cannot split: one condition has 0 valid trials.")
+
+    masks = {}
+    rng = np.random.default_rng(seed=seed)
+
+    # Incongruent is the minority
+    m_i = np.zeros_like(base_mask, dtype=bool)
+    m_i[valid_incong] = True
+    masks["incongruent"] = m_i
+
+    for i in range(n_subsamples):
+        samp_c = rng.choice(valid_cong, min_n, replace=False)
+        m_c = np.zeros_like(base_mask, dtype=bool)
+        m_c[samp_c] = True
+        masks[f"congruent_subsample_{i}"] = m_c
+
+    return masks
+
+
+def add_congruence(trials):
+    out = np.nan_to_num(trials.contrastLeft) - np.nan_to_num(trials.contrastRight)
+    left_stim = out > 0
+    right_stim = out < 0
+    # we throw out 0 contrast trials
+    is_left_block = trials["probabilityLeft"] > 0.5  # covers 0.8 blocks
+    is_right_block = trials["probabilityLeft"] < 0.5  # covers 0.2 blocks
+    congruent = (left_stim & is_left_block) | (right_stim & is_right_block)
+    return congruent.values

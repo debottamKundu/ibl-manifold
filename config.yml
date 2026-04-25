@@ -49,8 +49,52 @@ stim_prior_regions : [
         "SIM",
         "IP",
     ]
+stim_regions: [
+    ["MOs"],
+    ["SSp-ul"],
+    ["VISam"],
+    ["VISl"],
+    ["VISp"],
+    ["ACAd"],
+    ["PL"],
+    ["RSPv"],
+    ["VISa"],
+    ["CP"],
+    ["VM"],
+    ["VPM"],
+    ["MG"],
+    ["LGd"],
+    ["LP"],
+    ["Eth"],
+    ["CL"],
+    ["LGv"],
+    ["ZI"],
+    ["IC"],
+    ["SAG"],
+    ["SNr"],
+    ["MRN"],
+    ["SCm"],
+    ["PAG"],
+    ["APN"],
+    ["NOT"],
+    ["OP"],
+    ["RN"],
+    ["PPN"],
+    ["PRNc"],
+    ["TRN"],
+    ["CS"],
+    ["PRNr"],
+    ["GRN"],
+    ["IRN"],
+    ["PGRN"],
+    ["CUL4 5"],
+    ["SIM"],
+    ["IP"]
+    ]
 
 output_dir: "/usr/people/kundu/code/ibl-manifold/data/ephys"
+output_dir_feedback: "/usr/people/kundu/code/ibl-manifold/data/ephys_feedback"
 engagement_dir: "/usr/people/kundu/code/ibl-manifold/data/generated"
 output_dir_local: "./data/ephys"
 engagement_dir_local: "./data/generated"
+output_dir_feedback_local: "./data/ephys_feedback/"

@@ -15,44 +15,48 @@ from os.path import join
 import pickle as pkl
 from decoding.functions.utils import check_config_decoding
 from brainwidemap.bwm_loading import bwm_query, bwm_units, load_trials_and_mask, merge_probes
-from decoding.fit_data import fit_session_ephys
+from decoding.fit_data_feedback import (
+    fit_session_ephys,
+)  # NOTE: maybe this confusion is not the best idea.
 import concurrent.futures
 
 config = check_config_decoding()
 MY_REGIONS = config["stim_prior_regions"]
 MIN_NEURONS = config["min_units"]
 
+# reduce locations, only prior locations
 
-def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
+
+def decode_feedback(session_id, output_dir, bwm_df):
 
     # i can load trials as normal
 
     one = ONE(
-        # base_url="https://openalyx.internationalbrainlab.org",
-        # password="international",
-        # silent=True,
-        # username="intbrainlab",
-        mode="local",
+        base_url="https://openalyx.internationalbrainlab.org",
+        password="international",
+        silent=True,
+        username="intbrainlab",
+        # mode="local", #NOTE: make this local when on server
     )
     # try to make it local
     session_data = bwm_df[bwm_df["eid"] == session_id]
     pids = session_data["pid"].tolist()
     probes = session_data["probe_name"].tolist()
-    # pids, probes = one.eid2pid(session_id)
 
     trials, mask = load_trials_and_mask(
         one,
         session_id,
         exclude_nochoice=True,
-        exclude_unbiased=False,  # should include no-choice trials
+        exclude_unbiased=True,  # should include no-choice trials
     )
-    trials["engagement"] = engagement_signal
+    # trials["engagement"] = engagement_signal
     # trials = trials[mask]
     subject = bwm_df[bwm_df.eid == session_id].subject.iloc[0]
     results_dir = join(output_dir, subject, session_id)
+    print(results_dir)
     os.makedirs(results_dir, exist_ok=True)
 
-    pseduosessions = np.arange(1, 201)  # will have to run this proly.
+    pseduosessions = np.arange(1, 101)
     pseduosessions_argument = np.concat([[-1], pseduosessions])
     try:
         results_fit_session = fit_session_ephys(
@@ -62,16 +66,16 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             pids=pids,
             probe_names=probes,
             output_dir=output_dir,
-            model="oracle",
+            model="actKernel",
             pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
             time_window=(-0.6, -0.1),
             n_runs=2,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
-            target="engagement",
+            target="feedback",
             stage_only=False,
-            tanh_transform=False,
-            compute_neurometrics=False,
+            split_by_congruency=False,
+            trials_mask=mask,
         )
     except Exception as e:
         _log = "Something wrong -- Skipping session"
@@ -99,41 +103,29 @@ if __name__ == "__main__":
     relevant_pids = units_df[units_df["Beryl"].isin(MY_REGIONS)]["pid"].unique()
 
     bwm_df = bwm_query(one)
-    runonalleids = bwm_df["eid"].unique()
     # change subset df: use all valid eids
     subset_df = bwm_df[bwm_df["pid"].isin(relevant_pids)]
     list_of_eids = subset_df["eid"].unique()
 
-    # task_list = [(row["pid"], row["eid"]) for _, row in subset_df.iterrows()]
-
-    print(config["engagement_dir"])
-    print(config["output_dir"])
-
-    engagement_dir = config["engagement_dir"]
-    output_dir = config["output_dir"]
-
-    with open(f"{engagement_dir}/all_eids_engagement.pkl", "rb") as f:
-        engagement_pickle = pkl.load(f)
+    print(config["output_dir_feedback_local"])
+    output_dir = config["output_dir_feedback_local"]
 
     def process_eid(eid):
-        engagement_signal = engagement_pickle[eid]
-
-        fit_engagement(
+        decode_feedback(
             session_id=eid,
             output_dir=output_dir,
-            engagement_signal=engagement_signal,
             bwm_df=bwm_df,
         )
 
     # run a single one
-    # process_eid(list_of_eids[0])
+    process_eid(list_of_eids[0])
 
-    multiprocess = True
+    multiprocess = False  # NOTE: switch to true
     if multiprocess:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
 
             futures = {
-                executor.submit(process_eid, eid): eid for eid in runonalleids
+                executor.submit(process_eid, eid): eid for eid in list_of_eids
             }  # NOTE: check which list we are passing
 
             for future in concurrent.futures.as_completed(futures):

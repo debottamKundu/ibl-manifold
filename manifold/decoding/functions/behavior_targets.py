@@ -96,7 +96,14 @@ model_name2class = {
 
 
 def compute_beh_target(
-    trials_df, session_id, subject, model, target, behavior_path, remove_old=False
+    trials_df,
+    session_id,
+    subject,
+    model,
+    target,
+    behavior_path,
+    remove_old=False,
+    tanh_transform=False,
 ):
     """
     Computes regression target for use with regress_target, using subject, eid, and a string
@@ -144,6 +151,9 @@ def compute_beh_target(
             out = trials_df["signedContrast"].values
         else:
             out = np.nan_to_num(trials_df.contrastLeft) - np.nan_to_num(trials_df.contrastRight)
+
+        if tanh_transform:
+            out = np.tanh(5 * out) / np.tanh(5)
         if target == "signcont":
             return out
         else:
