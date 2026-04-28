@@ -92,7 +92,7 @@ if __name__ == "__main__":
 
     def process_eid(eid):
         try:
-            engagement_signal = engagement_pickle[eid]
+            engagement_signal = np.asarray(engagement_pickle[eid])
             scalar = MinMaxScaler()
             engagement_signal = scalar.fit_transform(engagement_signal.reshape(-1, 1)).flatten()
 
