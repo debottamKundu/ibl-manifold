@@ -84,20 +84,24 @@ if __name__ == "__main__":
     runonalleids = bwm_df["eid"].unique()
 
     engagement_dir = config["engagement_dir"]
-    output_dir = config["output_dir"] + "_different_time_interval"
+    # output_dir = config["output_dir"] + "_different_time_interval"
 
     with open(f"{engagement_dir}/all_eids_engagement.pkl", "rb") as f:
         engagement_pickle = pkl.load(f)
 
     def process_eid(eid):
-        engagement_signal = engagement_pickle[eid]
+        try:
+            engagement_signal = engagement_pickle[eid]
 
-        df = engagement_zero_df(
-            session_id=eid,
-            engagement_signal=engagement_signal,
-            bwm_df=bwm_df,
-        )
-        return df
+            df = engagement_zero_df(
+                session_id=eid,
+                engagement_signal=engagement_signal,
+                bwm_df=bwm_df,
+            )
+            return df
+        except Exception as e:
+            print(e)
+            return pd.DataFrame()
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
         results = list(executor.map(process_eid, runonalleids))
