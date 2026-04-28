@@ -65,7 +65,7 @@ def fit_engagement(session_id, output_dir, engagement_signal, bwm_df):
             model="oracle",
             pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
-            time_window=(-0.6, -0.1),
+            time_window=(0, 0.1),
             n_runs=2,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
             target="engagement",
@@ -110,7 +110,7 @@ if __name__ == "__main__":
     print(config["output_dir"])
 
     engagement_dir = config["engagement_dir"]
-    output_dir = config["output_dir"]
+    output_dir = config["output_dir"] + "_different_time_interval"
 
     with open(f"{engagement_dir}/all_eids_engagement.pkl", "rb") as f:
         engagement_pickle = pkl.load(f)
@@ -130,7 +130,7 @@ if __name__ == "__main__":
 
     multiprocess = True
     if multiprocess:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=100) as executor:
 
             futures = {
                 executor.submit(process_eid, eid): eid for eid in runonalleids

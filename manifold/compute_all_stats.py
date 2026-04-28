@@ -127,7 +127,7 @@ def significance_by_region(group, min_trials=50, min_sessions_per_region=2, alph
         result["sig_combined"] = np.nan
     else:
         scores = group.loc[trials_mask, "score"].values
-        result["pval_combined"] = stats.combine_pvalues(pvals, method="fisher")[1]
+        result["pval_combined"] = stats.combine_pvalues(pvals[trials_mask], method="fisher")[1]
         result["n_units_mean"] = group.loc[trials_mask, "n_units"].mean()
         result["values_std"] = np.std(scores)
         result["values_median"] = np.median(scores)

@@ -69,7 +69,7 @@ def decode_feedback(session_id, output_dir, bwm_df):
             model="actKernel",
             pseudo_ids=pseduosessions_argument,
             align_event="stimOn_times",
-            time_window=(-0.6, -0.1),
+            time_window=(-0.4, -0.1),
             n_runs=2,  # reduce this maybe : or change this based on pseudoids
             trials_df=trials,
             target="feedback",
