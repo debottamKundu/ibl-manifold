@@ -20,6 +20,7 @@ from decoding.fit_data_feedback import (
     fit_session_ephys,
 )  # NOTE: maybe this confusion is not the best idea.
 import concurrent.futures
+from sklearn.preprocessing import MinMaxScaler
 
 config = check_config_decoding()
 
@@ -92,6 +93,8 @@ if __name__ == "__main__":
     def process_eid(eid):
         try:
             engagement_signal = engagement_pickle[eid]
+            scalar = MinMaxScaler()
+            engagement_signal = scalar.fit_transform(engagement_signal.reshape(-1, 1)).flatten()
 
             df = engagement_zero_df(
                 session_id=eid,
@@ -103,9 +106,9 @@ if __name__ == "__main__":
             print(e)
             return pd.DataFrame()
 
-    with concurrent.futures.ProcessPoolExecutor(max_workers=64) as executor:
+    with concurrent.futures.ProcessPoolExecutor(max_workers=8) as executor:
         results = list(executor.map(process_eid, runonalleids))
 
     df = pd.concat(results)
 
-    df.to_parquet("./data/generated/engagement_zero_contrast.pqt")
+    df.to_parquet("./data/generated/engagement_zero_contrast_scaled.pqt")
