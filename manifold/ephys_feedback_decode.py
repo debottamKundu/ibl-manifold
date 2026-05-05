@@ -21,7 +21,7 @@ from decoding.fit_data_feedback import (
 import concurrent.futures
 
 config = check_config_decoding()
-MY_REGIONS = config["stim_prior_regions"]
+MY_REGIONS = config["prior_regions"]
 MIN_NEURONS = config["min_units"]
 
 # reduce locations, only prior locations
@@ -32,11 +32,11 @@ def decode_feedback(session_id, output_dir, bwm_df):
     # i can load trials as normal
 
     one = ONE(
-        base_url="https://openalyx.internationalbrainlab.org",
-        password="international",
-        silent=True,
-        username="intbrainlab",
-        # mode="local", #NOTE: make this local when on server
+        # base_url="https://openalyx.internationalbrainlab.org",
+        # password="international",
+        # silent=True,
+        # username="intbrainlab",
+        mode="local",
     )
     # try to make it local
     session_data = bwm_df[bwm_df["eid"] == session_id]
@@ -56,7 +56,7 @@ def decode_feedback(session_id, output_dir, bwm_df):
     print(results_dir)
     os.makedirs(results_dir, exist_ok=True)
 
-    pseduosessions = np.arange(1, 101)
+    pseduosessions = np.arange(1, 201)
     pseduosessions_argument = np.concat([[-1], pseduosessions])
     try:
         results_fit_session = fit_session_ephys(
@@ -68,6 +68,7 @@ def decode_feedback(session_id, output_dir, bwm_df):
             output_dir=output_dir,
             model="actKernel",
             pseudo_ids=pseduosessions_argument,
+            behavior_path="results_behavioral_zeta",  # think it is something_single_zeta
             align_event="stimOn_times",
             time_window=(-0.4, -0.1),
             n_runs=2,  # reduce this maybe : or change this based on pseudoids
@@ -96,19 +97,17 @@ if __name__ == "__main__":
     )
     print("Querying BWM Units...")
 
-    # only animals that pass the prior check
-    # but go through all regions that those animals have
-    # idk, this should be faster.
     units_df = bwm_units(one)
-    relevant_pids = units_df[units_df["Beryl"].isin(MY_REGIONS)]["pid"].unique()
+    flattened_regions = [item for sublist in MY_REGIONS for item in sublist]
+    relevant_pids = units_df[units_df["Beryl"].isin(flattened_regions)]["pid"].unique()
 
     bwm_df = bwm_query(one)
     # change subset df: use all valid eids
     subset_df = bwm_df[bwm_df["pid"].isin(relevant_pids)]
     list_of_eids = subset_df["eid"].unique()
 
-    print(config["output_dir_feedback_local"])
-    output_dir = config["output_dir_feedback_local"]
+    print(config["output_dir_feedback"])
+    output_dir = config["output_dir_feedback"]
 
     def process_eid(eid):
         decode_feedback(

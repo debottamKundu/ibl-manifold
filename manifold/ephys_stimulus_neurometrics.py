@@ -93,10 +93,7 @@ if __name__ == "__main__":
     )
     print("Querying BWM Units...")
 
-    # only animals that pass the prior check
-    # but go through all regions that those animals have
-    # idk, this should be faster.
-
+ 
     # no, only go through regions and eids that are bwm significant
     # units_df = bwm_units(one)
     # relevant_pids = units_df[units_df["Beryl"].isin(MY_REGIONS)]["pid"].unique()

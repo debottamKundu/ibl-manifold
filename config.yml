@@ -6,7 +6,7 @@ min_rt: 0.08
 max_rt: null
 
 # Decoding config
-estimator: Ridge  # possible values: LinearRegression, Lasso, Ridge, LogisticRegression, SoftmaxRegression
+estimator: LogisticRegression # possible values: LinearRegression, Lasso, Ridge, LogisticRegression, SoftmaxRegression
 estimator_kwargs: {tol: 0.0001, max_iter: 20000, fit_intercept: True}
 n_folds: 5
 binarization_value: null # to binarize the target -> could be useful with logistic regression estimator
@@ -91,7 +91,81 @@ stim_regions: [
     ["SIM"],
     ["IP"]
     ]
-
+prior_regions:  [
+        ["MOp"],
+        ["MOs"],
+        ["SSp-n"],
+        ["SSp-bfd"],
+        ["SSp-ll"],
+        ["SSp-ul"],
+        ["SSp-tr"],
+        ["SSp-un"],
+        ["SSs"],
+        ["VISC"],
+        ["AUDp"],
+        ["VISp"],
+        ["VISpl"],
+        ["ACAd"],
+        ["PL"],
+        ["ORBvl"],
+        ["AId"],
+        ["AIv"],
+        ["RSPagl"],
+        ["TEa"],
+        ["COAp"],
+        ["CA1"],
+        ["ENTm"],
+        ["SUB"],
+        ["HATA"],
+        ["EPv"],
+        ["CP"],
+        ["VAL"],
+        ["VPL"],
+        ["VPLpc"],
+        ["VPM"],
+        ["MG"],
+        ["LGd"],
+        ["PO"],
+        ["MD"],
+        ["CM"],
+        ["PF"],
+        ["RT"],
+        ["SubG"],
+        ["LH"],
+        ["MPO"],
+        ["LPO"],
+        ["ZI"],
+        ["SNr"],
+        ["MRN"],
+        ["SCm"],
+        ["PAG"],
+        ["APN"],
+        ["PPT"],
+        ["RN"],
+        ["PPN"],
+        ["PB"],
+        ["PRNc"],
+        ["PRNr"],
+        ["DCO"],
+        ["ECU"],
+        ["NTS"],
+        ["GRN"],
+        ["IRN"],
+        ["MARN"],
+        ["PGRN"],
+        ["PRP"],
+        ["MV"],
+        ["SPIV"],
+        ["LING"],
+        ["CENT3"],
+        ["CUL4 5"],
+        ["FOTU"],
+        ["SIM"],
+        ["ANcr1"],
+        ["COPY"],
+        ["IP"],
+        ["DN"]
+        ]
 output_dir: "/usr/people/kundu/code/ibl-manifold/data/ephys"
 output_dir_feedback: "/usr/people/kundu/code/ibl-manifold/data/ephys_feedback"
 engagement_dir: "/usr/people/kundu/code/ibl-manifold/data/generated"
