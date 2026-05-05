@@ -182,7 +182,7 @@ def fit_session_ephys(
         session_id,
         pids,
         probe_names,
-        config["regions"],
+        config["prior_regions"],
         intervals,
         qc=config["unit_qc"],
         min_units=config["min_units"],
