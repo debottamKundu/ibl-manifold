@@ -259,7 +259,10 @@ def check_bhv_fit_exists(subject, model, eids, resultpath, single_zeta):
     if single_zeta:
         fullpath += "_single_zeta"
     fullpath = build_path(fullpath, [eid.split("-")[0] for eid in eids])
-    fullpath = Path(resultpath).joinpath(subject, fullpath)
+
+    # NOTE: we skip subjects
+    fullpath = Path(resultpath).joinpath(fullpath)
+    # fullpath = Path(resultpath).joinpath(subject, fullpath), old way
     return fullpath.exists(), fullpath
 
 

@@ -27,7 +27,6 @@ from .functions.utils import (
 from .functions.nulldistributions import generate_null_distribution_session
 from .functions.neurometric import compute_neurometric_prior
 
-
 logger = logging.getLogger("decoding")
 
 model_name2class = {
@@ -284,9 +283,10 @@ def prepare_behavior(
             stim_side=stim_side,
             single_zeta=True,
         )
-        istrained, _ = check_bhv_fit_exists(
+        istrained, trained_path = check_bhv_fit_exists(
             subject, model, session_id, behavior_path, single_zeta=True
         )
+        print(trained_path)
         if not istrained:
             behavior_model.load_or_train(remove_old=False)
 

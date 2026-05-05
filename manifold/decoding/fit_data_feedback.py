@@ -159,7 +159,7 @@ def fit_session_ephys(
             keep_timeout_trials=False,  # keeps all timeout trials,but also fast trials.
         )
 
-    trials_mask = trials_mask.values
+    trials_mask = trials_mask.values  # this does use the passed mask.
     if sum(trials_mask) <= config["min_trials"]:
         raise ValueError(
             f"Session {session_id} has {sum(trials_mask)} good trials, less than {config['min_trials']}."

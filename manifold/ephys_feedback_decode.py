@@ -27,7 +27,7 @@ MIN_NEURONS = config["min_units"]
 # reduce locations, only prior locations
 
 
-def decode_feedback(session_id, output_dir, bwm_df):
+def decode_feedback(session_id, output_dir, bwm_df, n_pseudosession=200):
 
     # i can load trials as normal
 
@@ -56,7 +56,7 @@ def decode_feedback(session_id, output_dir, bwm_df):
     print(results_dir)
     os.makedirs(results_dir, exist_ok=True)
 
-    pseduosessions = np.arange(1, 201)
+    pseduosessions = np.arange(1, n_pseudosession)
     pseduosessions_argument = np.concat([[-1], pseduosessions])
     try:
         results_fit_session = fit_session_ephys(
@@ -109,15 +109,16 @@ if __name__ == "__main__":
     print(config["output_dir_feedback"])
     output_dir = config["output_dir_feedback"]
 
-    def process_eid(eid):
+    def process_eid(eid, n_pseudosessions=200):
         decode_feedback(
             session_id=eid,
             output_dir=output_dir,
             bwm_df=bwm_df,
+            n_pseudosession=n_pseudosessions,
         )
 
     # run a single one
-    process_eid(list_of_eids[0])
+    process_eid(list_of_eids[0], 2)
 
     multiprocess = False  # NOTE: switch to true
     if multiprocess:
