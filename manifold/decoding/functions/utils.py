@@ -1,4 +1,5 @@
 import logging
+from sklearn.metrics import balanced_accuracy_score
 import yaml
 import pickle
 import pandas as pd
@@ -291,6 +292,29 @@ def subtract_motor_residuals(motor_signals, all_targets, trials_mask):
     return new_targets, trials_mask
 
 
+def find_incongruent_trials(trials_df):
+
+    stim_side = np.zeros(len(trials_df))
+    stim_side[trials_df["contrastLeft"] > 0] = -1
+    stim_side[trials_df["contrastRight"] > 0] = 1
+
+    # this particular coding gets rid of zero contrast trials
+
+    block_side = np.zeros(len(trials_df))
+    block_side[trials_df["probabilityLeft"] > 0.5] = -1
+    block_side[trials_df["probabilityLeft"] < 0.5] = 1
+
+    congruent = (stim_side == block_side) & (stim_side != 0) & (block_side != 0)
+    incongruent = (stim_side != block_side) & (stim_side != 0) & (block_side != 0)
+
+    # do we need the base mask?
+    # i think not
+    if len(incongruent) > len(congruent):
+        raise ValueError("This shouldn't happen. Congruent always more than incongruent. ")
+
+    return congruent, incongruent
+
+
 def compute_congruency_splits(trials_df, base_mask, n_subsamples=10, seed=42):
     """
     Identifies congruent vs incongruent trials and generates matched subsamples.
@@ -338,3 +362,59 @@ def add_congruence(trials):
     is_right_block = trials["probabilityLeft"] < 0.5  # covers 0.2 blocks
     congruent = (left_stim & is_left_block) | (right_stim & is_right_block)
     return congruent.values
+
+
+def get_congruence(trials_df):
+    """
+    Calculate congruence for each trial.
+    Congruent: Stimulus side == Block side.
+    """
+
+    stim_side = np.zeros(len(trials_df))
+    stim_side[trials_df["contrastLeft"] > 0] = -1
+    stim_side[trials_df["contrastRight"] > 0] = 1
+
+    # this particular coding gets rid of zero contrast trials
+
+    block_side = np.zeros(len(trials_df))
+    block_side[trials_df["probabilityLeft"] > 0.5] = -1
+    block_side[trials_df["probabilityLeft"] < 0.5] = 1
+
+    congruent = (stim_side == block_side) & (stim_side != 0) & (block_side != 0)
+    incongruent = (stim_side != block_side) & (stim_side != 0) & (block_side != 0)
+
+    return congruent, incongruent
+
+
+def compute_subset_performance(fit_result, trials_df, mask):
+    """
+    Compute performance (Balanced Accuracy) for subsets of trials.
+    """
+    # trials_df here should be filtered by the same mask used in decoding
+    # fit_result['mask'] is the overall mask applied
+    overall_mask = fit_result["mask"]
+    y_true = np.array(fit_result["target"])
+    y_pred = np.array(fit_result["predictions_test"])
+
+    # We need to map the congruence mask (full session) to the filtered trials
+    congruent_full, incongruent_full = get_congruence(trials_df)
+
+    # Apply the same mask as used in decoding to the congruence masks
+    congr_masked = congruent_full[overall_mask]
+    incongr_masked = incongruent_full[overall_mask]
+
+    # Filter predictions and targets
+    perf = {}
+    if np.sum(congr_masked) > 0:
+        perf["congruent"] = balanced_accuracy_score(y_true[congr_masked], y_pred[congr_masked])
+    else:
+        perf["congruent"] = np.nan
+
+    if np.sum(incongr_masked) > 0:
+        perf["incongruent"] = balanced_accuracy_score(
+            y_true[incongr_masked], y_pred[incongr_masked]
+        )
+    else:
+        perf["incongruent"] = np.nan
+
+    return perf

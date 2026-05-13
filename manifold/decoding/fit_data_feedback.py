@@ -2,7 +2,9 @@ import logging
 import pickle
 import numpy as np
 import pandas as pd
-
+from brainwidemap.decoding.functions.balancedweightings import balanced_weighting
+from brainwidemap.decoding.functions.process_targets import transform_data_for_decoding
+from brainwidemap.decoding.functions.process_targets import logisticreg_criteria
 from sklearn import linear_model as sklm
 from sklearn.metrics import accuracy_score, balanced_accuracy_score, r2_score
 from sklearn.model_selection import KFold, train_test_split
@@ -26,6 +28,7 @@ from .functions.utils import (
     check_config_decoding,
     compute_mask,
     compute_congruency_splits,
+    find_incongruent_trials,
 )
 
 # Set up logger
@@ -34,7 +37,7 @@ logger = logging.getLogger("decoding_feedback_from_iti")
 config = check_config_decoding()
 
 
-def fit_session_ephys(
+def fit_session_ephys_feedback(
     one,
     session_id,
     subject,
@@ -42,9 +45,9 @@ def fit_session_ephys(
     probe_names,
     output_dir,
     pseudo_ids=None,
-    target="pLeft",
+    target="feedback",
     align_event="stimOn_times",
-    time_window=(-0.6, -0.1),
+    time_window=(-0.4, -0.1),
     model="optBay",
     n_runs=10,
     compute_neurometrics=False,
@@ -57,8 +60,8 @@ def fit_session_ephys(
     return_ephys=False,
     save_splits=False,
     fit_residuals=None,
-    split_by_congruency=False,
-    congruency_subsamples=10,
+    incongruent_only=True,
+    balanced_weighting=True,
     trials_mask=None,
 ):
     """
@@ -128,27 +131,22 @@ def fit_session_ephys(
     )
 
     # Load trials data and compute mask
-    if "glm-hmm" in target:
-        if trials_df is None:
-            raise ValueError("Missing trials DataFrame, `trials_df`")
-        assert isinstance(trials_df, pd.DataFrame), "`trials_df` must be a Pandas DataFrame object"
-    else:
-        if trials_df is not None:
-            assert isinstance(
-                trials_df, pd.DataFrame
-            ), "`trials_df` must be a Pandas DataFrame object"
-            print("using `trials_df` from kwargs")
-        else:
-            print(f"ONE in '{one.mode}' mode; ", end="")
-            if one.mode == "local":
-                print("importing `trials_df` via `One.load_object`")
-                trials_df = one.load_object(session_id, "trials")
-            else:
-                print("importing `trials_df` via `SessionLoader`")
-                sl = SessionLoader(one, session_id)
-                trials_df = sl.load_trials()
-            trials_df = trials_df.to_df()
 
+    if trials_df is not None:
+        assert isinstance(trials_df, pd.DataFrame), "`trials_df` must be a Pandas DataFrame object"
+        print("using `trials_df` from kwargs")
+    else:
+        print(f"ONE in '{one.mode}' mode; ", end="")
+        if one.mode == "local":
+            print("importing `trials_df` via `One.load_object`")
+            trials_df = one.load_object(session_id, "trials")
+        else:
+            print("importing `trials_df` via `SessionLoader`")
+            sl = SessionLoader(one, session_id)
+            trials_df = sl.load_trials()
+        trials_df = trials_df.to_df()
+
+    # we pass in the mask already
     if trials_mask is None:
         trials_mask = compute_mask(
             trials_df,
@@ -166,12 +164,11 @@ def fit_session_ephys(
         )
 
     # for feedback decoding
-    if split_by_congruency:
-        mask_dict = compute_congruency_splits(
-            trials_df, trials_mask, n_subsamples=congruency_subsamples
-        )
+    if incongruent_only:
+        congruent, incongruent = find_incongruent_trials(trials_df)
+        trials_mask = incongruent & trials_mask
     else:
-        mask_dict = {"all": trials_mask}
+        congruent, incongruent = find_incongruent_trials(trials_df)
 
     # Prepare ephys data
     intervals = np.vstack(
@@ -182,7 +179,7 @@ def fit_session_ephys(
         session_id,
         pids,
         probe_names,
-        config["prior_regions"],
+        config["regions"],  # this will essentially run it over the entire IBL dataset.
         intervals,
         qc=config["unit_qc"],
         min_units=config["min_units"],
@@ -209,59 +206,12 @@ def fit_session_ephys(
         compute_neurometrics=compute_neurometrics,
         integration_test=integration_test,
         behavior_path=behavior_path,
+        incongruent_only=incongruent_only,
     )
-    # returns pseudocongruence instead of neurometrics if target is feedback
 
-    # Remove the motor residuals from the targets if indicated
-    # if motor_residuals:
-    #     motor_signals = prepare_motor(one, session_id, time_window=time_window)
-    #     all_targets, trials_mask = subtract_motor_residuals(
-    #         motor_signals, all_targets, trials_mask
-    #     )
-    #     # trials_df['motor_signals'] = list(motor_signals) # placeholder, UNTESTED
-
-    # if fit_residuals is not None:
-    #     assert isinstance(
-    #         fit_residuals, np.ndarray
-    #     ), "regressor for the computation of residuals must be a numpy.ndarray or list"
-    #     all_targets, trials_mask = subtract_motor_residuals(
-    #         fit_residuals, all_targets, trials_mask
-    #     )
-
-    # save trials info for session, including mask over trials included in the decoding
     trials_df["mask"] = trials_mask
     trials_df.to_parquet(output_dir.joinpath(subject, session_id, "trials.pqt"))
 
-    if extra is not None:
-        """
-        If `extra` covariates are provided, they will be appended to the inputs
-        """
-        assert isinstance(
-            extra, (np.ndarray, list)
-        ), "Additional variables in `extra` should be provided as numpy.ndarray or list"
-
-        """
-        If extra is a dictionary, it should be a dictionary {region: extra_var}
-        """
-        if isinstance(extra, list):
-            extra_regions = [reg for reg, _ in extra]
-            extra_input = [x for _, x in extra]
-            for _region, _input in zip(extra_regions, extra_input):
-                if len(_input.shape) == 1:
-                    _input = _input.reshape(-1, 1)
-            matched_regions = [reg for reg in extra_regions if reg in actual_regions]
-            if len(matched_regions) == 0:
-                raise ValueError(
-                    "None of the keys in the `extra` dictionary "
-                    + "match the regions found in this session"
-                )
-        else:
-            matched_regions = None
-            extra_regions = None
-            if len(extra.shape) == 1:
-                extra = extra.reshape(-1, 1)
-
-    # If we are only staging data, we are done here
     if stage_only:
         return
 
@@ -277,27 +227,57 @@ def fit_session_ephys(
 
     session_dir = output_dir.joinpath(subject, session_id)
     session_dir.mkdir(parents=True, exist_ok=True)
+
     pseudo_targets = []
-    pseudo_congruence_array = []
     all_targets = [np.reshape(t, (-1, 1)) if not len(t[0].shape) else t for t in all_targets]
-    all_pseudo = [np.reshape(t, (-1, 1)) if not len(t[0].shape) else t for t in pseudo_congruence]  # type: ignore
-    print(len(all_pseudo))
-    print(len(all_targets))
-    for t, pseudo_id in zip(all_targets, pseudo_ids):
-        if pseudo_id == -1:
+    # no mask if not incongruent_only
+    if incongruent_only:
+        final_masks = []
+        for p_id, p_mask in zip(pseudo_ids, pseudo_congruence):  # type: ignore
+
+            if isinstance(p_mask, list) and len(p_mask) == 2:
+                raise ValueError("should not happem, incongruent only")
+                m = p_mask[1]  # Extract the incongruent mask
+            else:
+                m = p_mask
+
+            m = np.squeeze(np.array(m)).astype(bool)
+            if p_id == -1:
+                final_masks.append(trials_mask & m)
+            else:
+                final_masks.append(m)
+
+        actual_nb_trials = 0
+
+        # 2. Save targets and congruence
+        for i, (t, p_id) in enumerate(zip(all_targets, pseudo_ids)):
+            mask = final_masks[i]
+            if p_id == -1:
+                np.save(session_dir.joinpath("targets_real.npy"), t[mask])
+                # Store the final trial count to use in the output dict
+                actual_nb_trials = mask.sum()
+            else:
+                pseudo_targets.append(t[mask])
+                m_orig = pseudo_congruence[i]  # type: ignore
+                if isinstance(m_orig, list) and len(m_orig) == 2:
+                    m_arr = np.array(m_orig[1])
+                else:
+                    m_arr = np.array(m_orig)
+                pseudo_congruence_array.append(m_arr[mask])
+
+    for i, (t, p_id) in enumerate(zip(all_targets, pseudo_ids)):
+        if p_id == -1:
             np.save(session_dir.joinpath("targets_real.npy"), t[trials_mask])
-            congruence_real = add_congruence(trials_df[trials_mask])
-            np.save(session_dir.joinpath("congruence_real.npy"), congruence_real)
+            # Store the final trial count to use in the output dict
+            actual_nb_trials = trials_mask.sum()
         else:
             pseudo_targets.append(t[trials_mask])
-            pseudo_congruence_array.append(
-                all_pseudo[pseudo_id - 1][trials_mask]
-            )  # since we don't store the vongruence of the real one?
+            m_orig = pseudo_congruence[i]  # type: ignore
 
     n_pseudo = len(pseudo_targets)
     if n_pseudo:
         np.save(session_dir.joinpath("targets_pseudo.npy"), np.stack(pseudo_targets))
-        np.save(session_dir.joinpath("congruence_pseudo.npy"), np.stack(pseudo_congruence_array))
+        np.save(session_dir.joinpath("congruence_pseudo.npy"), np.stack(pseudo_congruence))  # type: ignore
 
     # Otherwise fit per region
     filenames = []
@@ -305,67 +285,70 @@ def fit_session_ephys(
 
         # append the extra variables to the input data
         data = data_region
-        if extra is not None:
-            if extra_regions is not None:
-                if not region in extra_regions:
-                    raise ValueError(f"Region {region} is not in the `extra` list")
-                data = np.concatenate([data, extra[extra_regions.index(region)][1]], axis=1)
-            else:
-                data = np.concatenate([data, extra], axis=1)
 
-        # Fit
-        # change here:
-        for condition_name, condition_mask in mask_dict.items():
-            print(f"\n  Decoding from {len(data_region[0])} neurons in {'_'.join(region)}")
+        print(f"\n  Decoding from {len(data_region[0])} neurons in {'_'.join(region)}")
+        if incongruent_only:
+            neural_mask = final_masks[0]
+
             fit_results = fit_target(
-                data[condition_mask],  # type: ignore
-                [t[condition_mask] for t in all_targets],  # U
+                data[neural_mask],  # type: ignore
+                [t[m] for t, m in zip(all_targets, final_masks)],  # U
                 all_trials,
                 n_runs,
                 None,  # all neurometrics
                 pseudo_ids,
                 integration_test=integration_test,
                 save_splits=save_splits,
+                balanced_weighting=balanced_weighting,
+            )
+        else:
+            fit_results = fit_target(
+                data[trials_mask],  # type: ignore
+                [t[trials_mask] for t in all_targets],  # U
+                all_trials,
+                n_runs,
+                None,  # all neurometrics
+                pseudo_ids,
+                integration_test=integration_test,
+                save_splits=save_splits,
+                balanced_weighting=balanced_weighting,
             )
 
-            # Create output paths and save
-            region_str = f"{'_'.join(region)}_{condition_name}"
+        # Create output paths and save
+        region_str = f"{'_'.join(region)}"
 
-            outdict = {
-                "fit": fit_results,
-                "subject": subject,
-                "eid": session_id,
-                "probe": probe_str,
-                "region": region,
-                "N_units": data_region.shape[1],
-                # "nb_trials": trials_mask.sum(),
-                "nb_trials": condition_mask.sum(),  # type: ignore
-                "condition": condition_name,
-            }
+        outdict = {
+            "fit": fit_results,
+            "subject": subject,
+            "eid": session_id,
+            "probe": probe_str,
+            "region": region,
+            "N_units": data_region.shape[1],
+        }
 
-            # save the predictions for the actual session
-            # (n_runs, nb_trials)
+        # save the predictions for the actual session
+        # (n_runs, nb_trials)
+        _pred = np.stack(
+            [res["predictions_test"] for res in fit_results if res["pseudo_id"] == -1]
+        )
+        np.save(session_dir.joinpath(f"{region_str}_predictions_real.npy"), _pred)
+        _shape = _pred[0].shape
+
+        # save the predictions for the pseudo sessions
+        # (n_pseudo, n_runs, nb_trials)
+        if n_pseudo:
             _pred = np.stack(
-                [res["predictions_test"] for res in fit_results if res["pseudo_id"] == -1]
+                [res["predictions_test"] for res in fit_results if res["pseudo_id"] != -1]
             )
-            np.save(session_dir.joinpath(f"{region_str}_predictions_real.npy"), _pred)
-            _shape = _pred[0].shape
+            _pred = _pred.reshape(n_pseudo, n_runs, *_shape)
+            np.save(session_dir.joinpath(f"{region_str}_predictions_pseudo.npy"), _pred)
 
-            # save the predictions for the pseudo sessions
-            # (n_pseudo, n_runs, nb_trials)
-            if n_pseudo:
-                _pred = np.stack(
-                    [res["predictions_test"] for res in fit_results if res["pseudo_id"] != -1]
-                )
-                _pred = _pred.reshape(n_pseudo, n_runs, *_shape)
-                np.save(session_dir.joinpath(f"{region_str}_predictions_pseudo.npy"), _pred)
-
-            # for each decoding (session, region) produce some summary of the results
-            # including R2 scores and weights
-            filename = session_dir.joinpath(f"{region_str}_decoding_summary.pqt")
-            _df = make_summary_df(outdict)
-            _df.to_parquet(filename)
-            filenames.append(filename)
+        # for each decoding (session, region) produce some summary of the results
+        # including R2 scores and weights
+        filename = session_dir.joinpath(f"{region_str}_decoding_summary.pqt")
+        _df = make_summary_df(outdict)
+        _df.to_parquet(filename)
+        filenames.append(filename)
 
     if return_ephys:
         return filenames, list(zip(actual_regions, data_epoch))
@@ -409,6 +392,7 @@ def fit_target(
     pseudo_ids=None,
     integration_test=False,
     save_splits=False,
+    balanced_weighting=True,
 ):
     """
     Fits data (neural, motor, etc) to behavior targets.
@@ -452,33 +436,20 @@ def fit_target(
             fit_result = decode_cv(
                 ys=targets,
                 Xs=data_to_fit,
+                use_openturns=False,
                 estimator=config["estimator"],
                 estimator_kwargs=config["estimator_kwargs"],
                 hyperparam_grid=config["hparam_grid"],
                 save_binned=False,
                 save_predictions=config["save_predictions"],
                 shuffle=config["shuffle"],
-                balanced_weight=config["balanced_weighting"],
+                balanced_weight=balanced_weighting,
                 rng_seed=rng_seed,
-                use_cv_sklearn_method=False,
-                save_splits=save_splits,
             )
 
             fit_result["trials_df"] = trials
             fit_result["pseudo_id"] = pseudo_id
             fit_result["run_id"] = i_run
-
-            if neurometrics:
-                fit_result["full_neurometric"], fit_result["fold_neurometric"] = (
-                    get_neurometric_parameters(
-                        fit_result,
-                        trialsdf=neurometrics,
-                        compute_on_each_fold=config["compute_neuro_on_each_fold"],
-                    )
-                )
-            else:
-                fit_result["full_neurometric"] = None
-                fit_result["fold_neurometric"] = None
 
             fit_results.append(fit_result)
 
@@ -490,20 +461,23 @@ def decode_cv(
     Xs,
     estimator,
     estimator_kwargs,
+    use_openturns,
+    target_distribution=None,
+    balanced_continuous_target=False,
     balanced_weight=False,
     hyperparam_grid=None,
     test_prop=0.2,
+    n_folds=5,
     save_binned=False,
     save_predictions=True,
     verbose=False,
     shuffle=True,
     outer_cv=True,
     rng_seed=None,
-    use_cv_sklearn_method=False,
-    save_splits=False,
+    normalize_input=False,
+    normalize_output=False,
 ):
-    """
-    Regresses binned neural activity against a target, using a provided sklearn estimator.
+    """Regresses binned neural activity against a target, using a provided sklearn estimator.
 
     Parameters
     ----------
@@ -521,8 +495,13 @@ def decode_cv(
         GridSearchCV
     estimator_kwargs : dict
         additional arguments for sklearn estimator
-    balanced_weight : bool
-        balanced weighting to target
+    use_openturns : bool
+    target_distribution : ?
+        ?
+    balanced_weight : ?
+        ?
+    balanced_continuous_target : ?
+        ?
     hyperparam_grid : dict
         key indicates hyperparameter to grid search over, and value is an array of nodes on the
         grid. See sklearn.model_selection.GridSearchCV : param_grid for more specs.
@@ -550,6 +529,11 @@ def decode_cv(
     verbose : bool
         Whether you want to hear about the function's life, how things are going, and what the
         neighbor down the street said to it the other day.
+    normalize_output : bool
+        True to take out the mean across trials of the output
+    normalize_input : bool
+        True to take out the mean across trials of the input; average is taken across trials for
+        each unit (one average per unit is computed)
 
     Returns
     -------
@@ -563,28 +547,23 @@ def decode_cv(
             - Input regressors (optional, see Xs argument)
 
     """
-    if isinstance(ys, pd.Series):
-        # input is a pandas Series
-        ys = ys.to_numpy()
 
     # transform target data into standard format: list of np.ndarrays
-    if isinstance(ys, np.ndarray):
-        # input is single numpy array
-        # reshape into array of lenght-1 arrays
-        if len(ys.shape) == 1:
-            ys = np.reshape(ys, (-1, 1))
-        # and transform into a list
-        ys = list(ys)
-    elif isinstance(ys, list) and ys[0].shape == ():
-        # input is list of float instead of list of np.ndarrays
-        ys = [np.array([y]) for y in ys]
-
-    # transform neural data into standard format: list of np.ndarrays
-    if isinstance(Xs, np.ndarray):
-        Xs = list(Xs)
+    # print(Xs.shape)
+    # print(ys.shape)
+    # ys = np.where(ys == -1, 0, ys)
+    print("shape is")
+    print(ys.shape)
+    ys, Xs = transform_data_for_decoding(ys, Xs)
+    # print(len(Xs))
+    # print(len(ys))
+    # print(ys)
+    # ys = np.ravel(ys)
+    # print(ys)
 
     # initialize containers to save outputs
     n_trials = len(Xs)
+    bins_per_trial = len(Xs[0])
     scores_test, scores_train = [], []
     idxes_test, idxes_train = [], []
     weights, intercepts, best_params = [], [], []
@@ -595,14 +574,33 @@ def decode_cv(
     # when shuffle=False, the method will take the end of the dataset to create the test set
     if rng_seed is not None:
         np.random.seed(rng_seed)
+    # create indicies to loop over
     indices = np.arange(n_trials)
-    n_folds = config["n_folds"]
     if outer_cv:
-        outer_kfold = KFold(n_splits=n_folds, shuffle=shuffle).split(indices)
+        # create kfold function to loop over
+        get_kfold = lambda: KFold(n_splits=n_folds, shuffle=shuffle).split(indices)
+        # define function to evaluate whether folds are satisfactory
+        if estimator == sklm.LogisticRegression:
+            # folds must be chosen such that 2 classes are present in each fold
+            assert logisticreg_criteria(ys)
+            isysat = lambda ys: logisticreg_criteria(
+                ys, MIN_UNIQUE_COUNTS=2
+            )  # len(np.unique(ys))==2 and np.min(np.unique(ys ,return_counts=True)[1])>=2
+        else:
+            isysat = lambda ys: True
+        sample_count, _, outer_fold_iter = sample_folds(ys, get_kfold, isysat)
+        if sample_count > 1:
+            print(f"sampled outer folds {sample_count} times to ensure enough targets")
+
+        # old way of getting non logistic regression folds. now incorporated into above
+        # else:
+        #    outer_fold_iter = [(train_idxs, test_idxs) for _, (train_idxs, test_idxs) in enumerate(get_kfold())]
+
     else:
         outer_kfold = iter([train_test_split(indices, test_size=test_prop, shuffle=shuffle)])
-    if save_splits:
-        outer_kfold = list(outer_kfold)
+        outer_fold_iter = [
+            (train_idxs, test_idxs) for _, (train_idxs, test_idxs) in enumerate(outer_kfold)
+        ]
 
     # scoring function; use R2 for linear regression, accuracy for logistic regression
     scoring_f = balanced_accuracy_score if (estimator == sklm.LogisticRegression) else r2_score
@@ -617,160 +615,170 @@ def decode_cv(
         raise NotImplementedError("the code does not support a CV-type estimator for the moment.")
     else:
         # loop over outer folds
-        for ofold, (train_idxs_outer, test_idxs_outer) in enumerate(outer_kfold):
-            # print("  outer fold =", ofold)
+        for train_idxs_outer, test_idxs_outer in outer_fold_iter:
             # outer fold data split
             X_train = [Xs[i] for i in train_idxs_outer]
             y_train = [ys[i] for i in train_idxs_outer]
             X_test = [Xs[i] for i in test_idxs_outer]
             y_test = [ys[i] for i in test_idxs_outer]
 
-            key = list(hyperparam_grid.keys())[0]  # TODO: make this more robust
+            # create indicies and kfold function to loop over inner folds
+            idx_inner = np.arange(len(X_train))
+            get_kfold = lambda: KFold(n_splits=n_folds, shuffle=shuffle).split(idx_inner)
 
-            if not use_cv_sklearn_method:
-                # now loop over inner folds
-                idx_inner = np.arange(len(X_train))
-                inner_kfold = KFold(n_splits=n_folds, shuffle=shuffle).split(idx_inner)
+            # produce inner_fold_iter such that logistic regression has at least 2 classes
+            if estimator == sklm.LogisticRegression:
+                # is it possible to construct folds
+                y_uniquecounts = np.unique(y_train, return_counts=True)[1]
+                assert logisticreg_criteria(
+                    y_train, MIN_UNIQUE_COUNTS=2
+                )  # len(y_uniquecounts)==2 and np.min(y_uniquecounts)>=2 #print('failed inner fold, target unique counts:', y_uniquecounts)
 
-                r2s = np.zeros([n_folds, len(hyperparam_grid[key])])
-                # AP: added a second axis for vector predictions -- should work also for scalar outputs
-                inner_predictions = (
-                    np.zeros([len(y_train), len(y_train[0]), len(hyperparam_grid[key])]) + np.nan
-                )
-                inner_targets = (
-                    np.zeros([len(y_train), len(y_train[0]), len(hyperparam_grid[key])]) + np.nan
-                )
-                for ifold, (train_idxs_inner, test_idxs_inner) in enumerate(inner_kfold):
-                    # print("    inner fold =", ifold)
+                # folds must be chosen such that 2 classes are present in each fold
+                isysat = lambda ys: logisticreg_criteria(
+                    ys, MIN_UNIQUE_COUNTS=1
+                )  # len(np.unique(ys))==2 and np.min(np.unique(ys ,return_counts=True)[1])>=1
+            else:
+                isysat = lambda ys: True
+            sample_count, _, inner_fold_iter = sample_folds(y_train, get_kfold, isysat)
+            if sample_count > 1:
+                print(f"sampled inner folds {sample_count} times to ensure enough targets")
 
-                    # inner fold data split
-                    X_train_inner = np.vstack([X_train[i] for i in train_idxs_inner])
-                    X_test_inner = np.vstack([X_train[i] for i in test_idxs_inner])
-                    if len(y_train[0]) == 1:
-                        y_train_inner = np.concatenate(
-                            [y_train[i] for i in train_idxs_inner], axis=0
-                        )
-                        y_test_inner = np.concatenate(
-                            [y_train[i] for i in test_idxs_inner], axis=0
+            key = list(hyperparam_grid.keys())[0]  # type: ignore # TODO: make this more robust
+            r2s = np.zeros([n_folds, len(hyperparam_grid[key])])  # type: ignore
+            for ifold, (train_idxs_inner, test_idxs_inner) in enumerate(inner_fold_iter):
+
+                # inner fold data split
+                X_train_inner = np.vstack([X_train[i] for i in train_idxs_inner])
+                y_train_inner = np.concatenate([y_train[i] for i in train_idxs_inner], axis=0)
+                X_test_inner = np.vstack([X_train[i] for i in test_idxs_inner])
+                y_test_inner = np.concatenate([y_train[i] for i in test_idxs_inner], axis=0)
+
+                # normalize inputs/outputs if requested
+                mean_X_train_inner = X_train_inner.mean(axis=0) if normalize_input else 0
+                X_train_inner = X_train_inner - mean_X_train_inner
+                X_test_inner = X_test_inner - mean_X_train_inner
+                mean_y_train_inner = y_train_inner.mean(axis=0) if normalize_output else 0
+                y_train_inner = y_train_inner - mean_y_train_inner
+
+                for i_alpha, alpha in enumerate(hyperparam_grid[key]):  # type: ignore
+
+                    # compute weight for each training sample if requested
+                    # (esp necessary for classification problems with imbalanced classes)
+                    if balanced_weight:
+                        sample_weight = balanced_weighting(
+                            vec=y_train_inner,
+                            continuous=balanced_continuous_target,
+                            use_openturns=use_openturns,
+                            target_distribution=target_distribution,
                         )
                     else:
-                        y_train_inner = np.vstack([y_train[i] for i in train_idxs_inner])
-                        y_test_inner = np.vstack([y_train[i] for i in test_idxs_inner])
+                        sample_weight = None
 
-                    for i_alpha, alpha in enumerate(hyperparam_grid[key]):
-                        # print("      alpha =", alpha)
+                    # initialize model
+                    model_inner = estimator(**{**estimator_kwargs, key: alpha})
+                    # fit model
+                    model_inner.fit(X_train_inner, y_train_inner, sample_weight=sample_weight)
+                    # evaluate model
+                    pred_test_inner = model_inner.predict(X_test_inner) + mean_y_train_inner
+                    r2s[ifold, i_alpha] = scoring_f(y_test_inner, pred_test_inner)
 
-                        # compute weight for each training sample if requested
-                        sample_weight = (
-                            compute_sample_weight("balanced", y=y_train_inner)
-                            if balanced_weight
-                            else None
-                        )
+            # select model with best hyperparameter value evaluated on inner-fold test data;
+            # refit/evaluate on all inner-fold data
+            r2s_avg = r2s.mean(axis=0)
 
-                        # initialize model
+            # normalize inputs/outputs if requested
+            X_train_array = np.vstack(X_train)
+            mean_X_train = X_train_array.mean(axis=0) if normalize_input else 0
+            X_train_array = X_train_array - mean_X_train
 
-                        model_inner = estimator(**{**estimator_kwargs, key: alpha})
-                        # fit model
-                        model_inner.fit(X_train_inner, y_train_inner, sample_weight=sample_weight)
-                        # evaluate model
-                        pred_test_inner = model_inner.predict(X_test_inner)
-                        # save predictions
-                        inner_predictions[test_idxs_inner, :, i_alpha] = pred_test_inner.reshape(
-                            -1, len(ys[0])
-                        )
-                        inner_targets[test_idxs_inner, :, i_alpha] = y_test_inner.reshape(
-                            -1, len(ys[0])
-                        )
-                        # calculate and save inner-CV score
-                        r2s[ifold, i_alpha] = scoring_f(y_test_inner, pred_test_inner)
+            y_train_array = np.concatenate(y_train, axis=0)
+            mean_y_train = y_train_array.mean(axis=0) if normalize_output else 0
+            y_train_array = y_train_array - mean_y_train
 
-                assert np.all(~np.isnan(inner_predictions))
-                assert np.all(~np.isnan(inner_targets))
-                r2s_avg = np.array(
-                    [
-                        scoring_f(inner_targets[:, :, _k], inner_predictions[:, :, _k])
-                        for _k in range(len(hyperparam_grid[key]))
-                    ]
+            # compute weight for each training sample if requested
+            if balanced_weight:
+                sample_weight = balanced_weighting(
+                    vec=y_train_array,
+                    continuous=balanced_continuous_target,
+                    use_openturns=use_openturns,
+                    target_distribution=target_distribution,
                 )
-                # select model with best hyperparameter value evaluated on inner-fold test data;
-                # refit/evaluate on all inner-fold data
-                r2s_avg = r2s.mean(axis=0)
-
-                X_train_array = np.vstack(X_train)
-                if len(y_train[0]) == 1:
-                    y_train_array = np.concatenate(y_train, axis=0)
-                else:
-                    y_train_array = np.vstack(y_train)
-
-                # compute weight for each training sample if requested
-                sample_weight = (
-                    compute_sample_weight("balanced", y=y_train_array) if balanced_weight else None
-                )
-
-                # initialize model
-                best_alpha = hyperparam_grid[key][np.argmax(r2s_avg)]
-                # print("    best alpha =", best_alpha)
-                model = estimator(**{**estimator_kwargs, key: best_alpha})
-                # fit model
-                model.fit(X_train_array, y_train_array, sample_weight=sample_weight)
             else:
-                if estimator not in [Ridge, Lasso]:
-                    raise NotImplementedError("This case is not implemented")
-                model = (
-                    RidgeCV(alphas=hyperparam_grid[key])
-                    if estimator == Ridge
-                    else LassoCV(alphas=hyperparam_grid[key])
-                )
-                X_train_array = np.vstack(X_train)
-                y_train_array = np.concatenate(y_train, axis=0)
-                sample_weight = (
-                    compute_sample_weight("balanced", y=y_train_array) if balanced_weight else None
-                )
+                sample_weight = None
 
-                model.fit(X_train_array, y_train_array, sample_weight=sample_weight)
-                best_alpha = model.alpha_
+            # initialize model
+            best_alpha = hyperparam_grid[key][np.argmax(r2s_avg)]  # type: ignore
+            model = estimator(**{**estimator_kwargs, key: best_alpha})
+            # fit model
+            model.fit(X_train_array, y_train_array, sample_weight=sample_weight)
 
             # evalute model on train data
-            y_pred_train = model.predict(X_train_array)
-            scores_train.append(scoring_f(y_train_array, y_pred_train))
+            y_pred_train = model.predict(X_train_array) + mean_y_train
+            scores_train.append(
+                scoring_f(y_train_array + mean_y_train, y_pred_train + mean_y_train)
+            )
 
             # evaluate model on test data
-            if len(y_test[0]) == 1:
-                y_true = np.concatenate(y_test, axis=0)
+            y_true = np.concatenate(y_test, axis=0)
+            y_pred = model.predict(np.vstack(X_test) - mean_X_train) + mean_y_train
+            if isinstance(model, sklm.LogisticRegression) and bins_per_trial == 1:
+                # print("predicting proba in decoding of logistic regression!")
+                y_pred_probs = (
+                    model.predict_proba(np.vstack(X_test) - mean_X_train)[:, 1] + mean_y_train
+                )
+                # print(f"example of proba: {y_pred_probs[0]:.5f}")
+                # print(y_pred_probs[:100], y_pred[:100])
+                # print(np.isclose(y_pred_probs[:100], y_pred[:100]))
+                y_comp_probs = ~(y_pred_probs == 0.5)
+                # print(y_pred_probs[y_comp_probs] > 0.5)
+                # print(y_pred[y_comp_probs])
+                # assert np.all((y_pred_probs[y_comp_probs] > 0.5) == y_pred[y_comp_probs])
             else:
-                y_true = np.vstack(y_test)
-            y_pred = model.predict(np.vstack(X_test))
-            if isinstance(estimator, sklm.LogisticRegression):
-                y_pred_probs = model.predict_proba(np.vstack(X_test))[:, 0]
-            else:
+                print(
+                    "did not predict proba",
+                    estimator,
+                    isinstance(model, sklm.LogisticRegression),
+                    bins_per_trial,
+                )
                 y_pred_probs = None
             scores_test.append(scoring_f(y_true, y_pred))
 
             # save the raw prediction in the case of linear and the predicted probabilities when
             # working with logitistic regression
             for i_fold, i_global in enumerate(test_idxs_outer):
-                # we already computed these estimates, take from above
-                predictions[i_global] = np.array([y_pred[i_fold]])
-                if isinstance(estimator, sklm.LogisticRegression):
-                    predictions_to_save[i_global] = np.array([y_pred_probs[i_fold]])
+                if bins_per_trial == 1:
+                    # we already computed these estimates, take from above
+                    predictions[i_global] = np.array([y_pred[i_fold]])
+                    if isinstance(model, sklm.LogisticRegression):
+                        predictions_to_save[i_global] = np.array([y_pred_probs[i_fold]])  # type: ignore
+                    else:
+                        predictions_to_save[i_global] = np.array([y_pred[i_fold]])
                 else:
-                    predictions_to_save[i_global] = np.array([y_pred[i_fold]])
+                    # we already computed these above, but after all trials were stacked;
+                    # recompute per-trial
+                    predictions[i_global] = (
+                        model.predict(X_test[i_fold] - mean_X_train) + mean_y_train
+                    )
+                    if isinstance(model, sklm.LogisticRegression):
+                        predictions_to_save[i_global] = (
+                            model.predict_proba(X_test[i_fold] - mean_X_train)[:, 0] + mean_y_train
+                        )
+                    else:
+                        predictions_to_save[i_global] = predictions[i_global]
 
             # save out other data of interest
             idxes_test.append(test_idxs_outer)
             idxes_train.append(train_idxs_outer)
             weights.append(model.coef_)
-            if model.fit_intercept:
+            if model.fit_intercept:  # type: ignore
                 intercepts.append(model.intercept_)
             else:
                 intercepts.append(None)
             best_params.append({key: best_alpha})
 
-    if len(ys[0]) == 1:
-        ys_true_full = np.concatenate(ys, axis=0)
-    else:
-        ys_true_full = np.vstack(ys)
-    ys_pred_full = np.concatenate(predictions, axis=0)
+    ys_true_full = np.concatenate(ys, axis=0)
+    ys_pred_full = np.concatenate(predictions, axis=0)  # type: ignore
     outdict = dict()
     outdict["scores_test_full"] = scoring_f(ys_true_full, ys_pred_full)
     outdict["scores_train"] = scores_train
@@ -779,16 +787,14 @@ def decode_cv(
     if estimator == sklm.LogisticRegression:
         outdict["acc_test_full"] = accuracy_score(ys_true_full, ys_pred_full)
         outdict["balanced_acc_test_full"] = balanced_accuracy_score(ys_true_full, ys_pred_full)
-    outdict["weights"] = weights if save_predictions else None
-    outdict["intercepts"] = intercepts if save_predictions else None
-    if save_splits:
-        outdict["train_test_splits"] = outer_kfold if save_predictions else None
+    outdict["weights"] = weights
+    outdict["intercepts"] = intercepts
     outdict["target"] = ys
-    outdict["predictions_test"] = predictions_to_save
+    outdict["predictions_test"] = predictions_to_save if save_predictions else None
     outdict["regressors"] = Xs if save_binned else None
-    outdict["idxes_test"] = idxes_test if save_predictions else None
-    outdict["idxes_train"] = idxes_train if save_predictions else None
-    outdict["best_params"] = best_params if save_predictions else None
+    outdict["idxes_test"] = idxes_test
+    outdict["idxes_train"] = idxes_train
+    outdict["best_params"] = best_params
     outdict["n_folds"] = n_folds
     if hasattr(model, "classes_"):
         outdict["classes_"] = model.classes_
@@ -818,3 +824,20 @@ def decode_cv(
         print("The model is trained on the full (train + validation) set.")
 
     return outdict
+
+
+def sample_folds(ys, get_kfold, isfoldsat, max_iter=100):
+    sample_count = 0
+    ysatisfy = [False]
+    while not np.all(np.array(ysatisfy)):
+        assert sample_count < max_iter
+        sample_count += 1
+        out_kfold = get_kfold()
+        fold_iter = [
+            (train_idxs, test_idxs) for _, (train_idxs, test_idxs) in enumerate(out_kfold)
+        ]
+        ysatisfy = [
+            isfoldsat(np.concatenate([ys[i] for i in t_idxs], axis=0)) for t_idxs, _ in fold_iter
+        ]
+
+    return sample_count, out_kfold, fold_iter

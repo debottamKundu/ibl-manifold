@@ -22,6 +22,7 @@ from .functions.utils import (
     average_data_in_epoch,
     check_config_decoding,
     downsample_atlas,
+    find_incongruent_trials,
     spatial_down_sample,
 )
 from .functions.nulldistributions import generate_null_distribution_session
@@ -218,6 +219,7 @@ def prepare_behavior(
     kind_of_pseudo="true_pseudo",
     tanh_transform=False,
     neurometric_split="engagement",
+    incongruent_only=False,
 ):
     if pseudo_ids is None:
         pseudo_ids = [-1]  # -1 is always the actual session
@@ -303,30 +305,77 @@ def prepare_behavior(
                     trials_df, session_id, subject, model, target, behavior_path, tanh_transform
                 )
             )
+            if target == "feedback":
+                og_congruent, og_incongruent = find_incongruent_trials(trials_df)
+                if incongruent_only:
+                    pseudo_congruence.append(og_incongruent)
+                else:
+                    pseudo_congruence.append([og_congruent, og_incongruent])
+                    # raise ValueError("This should not happen.")
         else:
             if (
                 integration_test
             ):  # for reproducing the test results we need to fix a seed in this case
                 np.random.seed(pseudo_id)
-            control_trials = generate_null_distribution_session(
-                trials_df, session_id, subject, model, behavior_path
-            )
-            if "engagement" in trials_df.columns:
-                control_trials["engagement"] = trials_df["engagement"].values
-            all_trials.append(control_trials)
-            all_targets.append(
-                compute_beh_target(
-                    control_trials,
-                    session_id,
-                    subject,
-                    model,
-                    target,
-                    behavior_path,
-                    tanh_transform,
-                )
-            )
+
             if target == "feedback":
-                pseudo_congruence.append(add_congruence(control_trials))
+                true_congruent, true_incongruent = find_incongruent_trials(trials_df)
+                if incongruent_only:
+                    true_valid_mask = true_incongruent & trials_mask
+                    N_required = np.sum(true_valid_mask)
+                    control_trials, pseudo_congruent, final_pseudo_incongruent = (
+                        generate_matched_pseudosession(
+                            trials_df,
+                            trials_mask,
+                            N_required,
+                            session_id,
+                            subject,
+                            model,
+                            behavior_path,
+                        )
+                    )  # type: ignore
+                else:
+                    control_trials = generate_null_distribution_session(
+                        trials_df, session_id, subject, model, behavior_path
+                    )
+                    pseudo_congruent, pseudo_incongruent = find_incongruent_trials(
+                        control_trials
+                    )
+                all_trials.append(control_trials)
+                all_targets.append(
+                    compute_beh_target(
+                        control_trials,
+                        session_id,
+                        subject,
+                        model,
+                        target,
+                        behavior_path,
+                        tanh_transform,
+                    )
+                )
+                if incongruent_only:
+                    pseudo_congruence.append(final_pseudo_incongruent)
+                else:
+                    # raise ValueError("This should not happen.")
+                    pseudo_congruence.append([pseudo_congruent, pseudo_incongruent])
+            else:
+                control_trials = generate_null_distribution_session(
+                    trials_df, session_id, subject, model, behavior_path
+                )
+                if "engagement" in trials_df.columns:
+                    control_trials["engagement"] = trials_df["engagement"].values
+                all_trials.append(control_trials)
+                all_targets.append(
+                    compute_beh_target(
+                        control_trials,
+                        session_id,
+                        subject,
+                        model,
+                        target,
+                        behavior_path,
+                        tanh_transform,
+                    )
+                )
     if target == "feedback":
         return all_trials, all_targets, trials_mask, pseudo_congruence
 
@@ -570,3 +619,32 @@ def prepare_widefield_old(old_data, hemisphere, regions, align_event, frame_wind
             actual_regions.append(region)
 
     return data_epoch, actual_regions
+
+
+def generate_matched_pseudosession(
+    trials_df, trials_mask, N_required, session_id, subject, model, behavior_path
+):
+    """
+    Generates a pseudosession that guarantees a specific number of incongruent-trials
+    """
+    valid_control_found = False
+
+    while not valid_control_found:
+        control_trials = generate_null_distribution_session(
+            trials_df, session_id, subject, model, behavior_path
+        )
+
+        pseudo_congruent, pseudo_incongruent = find_incongruent_trials(control_trials)
+
+        overlap_mask = pseudo_incongruent
+        N_overlap = np.sum(overlap_mask)
+
+        if N_overlap >= N_required:
+            valid_control_found = True
+
+            overlap_indices = np.where(overlap_mask)[0]
+            subsampled_idx = np.random.choice(overlap_indices, N_required, replace=False)
+            final_pseudo_incongruent = np.zeros(len(trials_df), dtype=bool)
+            final_pseudo_incongruent[subsampled_idx] = True
+
+            return control_trials, pseudo_congruent, final_pseudo_incongruent

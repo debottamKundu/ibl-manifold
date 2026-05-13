@@ -112,15 +112,25 @@ def compute_stats_over_pseudo_ids(group, n_pseudo=200):
         n_trials = np.unique(c)
         assert len(n_trials) == 1, "n_trials vals do not agree across all runs"
         result["n_trials"] = int(n_trials[0])
+        
+        null_low_slopes = null_data["low_slope"].values
+        null_high_slopes = null_data["high_slope"].values
 
-        a_low = real_data["low_slope"].values[0]
-        a_high = real_data["high_slope"].values[0]
-        result["low_slope"] = a_low
-        result["high_slope"] = a_high
-
+        
         real_diff = a_high - a_low
-        null_diffs = null_data["high_slope"].values - null_data["low_slope"].values
+        null_diffs = null_high_slopes - null_low_slopes
+        
+        result["null_median_low_slope"] = np.median(null_low_slopes)
+        result["null_median_high_slope"] = np.median(null_high_slopes)
+        result["null_median_slope_diff"] = np.median(null_diffs)
+
+        
+        result["slope_diff_effect_size"] = real_diff - result["null_median_slope_diff"]
+
+        
         all_diffs = np.concatenate([null_diffs, [real_diff]])
+        
+        
         result["slope_diff_pval"] = np.mean(np.abs(all_diffs) >= np.abs(real_diff))
         result["slope_diff_pval_oneside"] = np.mean(all_diffs >= real_diff)
 
