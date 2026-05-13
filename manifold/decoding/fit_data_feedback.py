@@ -2,6 +2,7 @@ import logging
 import pickle
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import DataConversionWarning
 from brainwidemap.decoding.functions.balancedweightings import balanced_weighting
 from brainwidemap.decoding.functions.process_targets import transform_data_for_decoding
 from brainwidemap.decoding.functions.process_targets import logisticreg_criteria
@@ -35,6 +36,10 @@ from .functions.utils import (
 logger = logging.getLogger("decoding_feedback_from_iti")
 # Load and check configuration file
 config = check_config_decoding()
+
+# import warnings
+
+# warnings.filterwarnings(action="error", category=DataConversionWarning)
 
 
 def fit_session_ephys_feedback(
@@ -678,7 +683,9 @@ def decode_cv(
                     # initialize model
                     model_inner = estimator(**{**estimator_kwargs, key: alpha})
                     # fit model
-                    model_inner.fit(X_train_inner, y_train_inner, sample_weight=sample_weight)
+                    model_inner.fit(
+                        X_train_inner, y_train_inner.ravel(), sample_weight=sample_weight
+                    )
                     # evaluate model
                     pred_test_inner = model_inner.predict(X_test_inner) + mean_y_train_inner
                     r2s[ifold, i_alpha] = scoring_f(y_test_inner, pred_test_inner)
@@ -711,7 +718,7 @@ def decode_cv(
             best_alpha = hyperparam_grid[key][np.argmax(r2s_avg)]  # type: ignore
             model = estimator(**{**estimator_kwargs, key: best_alpha})
             # fit model
-            model.fit(X_train_array, y_train_array, sample_weight=sample_weight)
+            model.fit(X_train_array, y_train_array.ravel(), sample_weight=sample_weight)
 
             # evalute model on train data
             y_pred_train = model.predict(X_train_array) + mean_y_train

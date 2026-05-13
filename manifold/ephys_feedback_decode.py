@@ -115,7 +115,7 @@ if __name__ == "__main__":
     runonalleids = bwm_df["eid"].unique()
 
     print(config["output_dir_feedback"])
-    output_dir = config["output_dir_feedback_local"]
+    output_dir = config["output_dir_feedback"]
 
     def process_eid(eid, n_pseudosessions=200):
         decode_feedback(
@@ -126,11 +126,11 @@ if __name__ == "__main__":
         )
 
     # run a single one
-    process_eid(runonalleids[0], 200)
+    process_eid(runonalleids[0], 2)
 
     multiprocess = False  # NOTE: switch to true
     if multiprocess:
-        with concurrent.futures.ProcessPoolExecutor(max_workers=None) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_workers=120) as executor:
 
             futures = {
                 executor.submit(process_eid, eid): eid for eid in runonalleids
