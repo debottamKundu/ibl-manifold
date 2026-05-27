@@ -420,7 +420,7 @@ def main():
     args = parser.parse_args()
     root = "/usr/people/kundu/code/ibl-manifold/"
     local = "/Users/dkundu/Documents/phd/ibl-manifold"
-    base_dir = root
+    base_dir = root if os.path.exists(root) else local
     data_dir = os.path.join(base_dir, "data", "ephys_neurometric")
     stage2_path = os.path.join(
         base_dir, "data", "collected_results", "stimulus", "collected_results_stage2.pqt"
