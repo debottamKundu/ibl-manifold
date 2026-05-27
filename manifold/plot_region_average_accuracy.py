@@ -29,7 +29,7 @@ def plot_grouped_accuracy_bar_region(df_region, region, save_path):
         x - width / 2,
         low_means,
         width,
-        label="Low Engagement (Mean)",
+        label="Low Engagement",
         color="#008BFB",
         alpha=0.3,
         edgecolor="black",
@@ -39,7 +39,7 @@ def plot_grouped_accuracy_bar_region(df_region, region, save_path):
         x + width / 2,
         high_means,
         width,
-        label="High Engagement (Mean)",
+        label="High Engagement",
         color="#FF8C00",
         alpha=0.3,
         edgecolor="black",
@@ -84,7 +84,7 @@ def plot_grouped_accuracy_bar_region(df_region, region, save_path):
 
     plt.ylabel("Decoding Accuracy", fontsize=12)
     plt.title(
-        f"[{region}] Average Decoding Accuracy (n={n_sess} sessions)",
+        f"{region}, n={n_sess}",
         fontsize=14,
         fontweight="bold",
     )
