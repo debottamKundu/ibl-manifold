@@ -106,7 +106,7 @@ def main():
     base_dir = root if os.path.exists(root) else local
 
     results_dir = os.path.join(base_dir, "data", "generated", "accuracy_engagement_results")
-    out_dir = os.path.join(local, "data", "generated", "accuracy_region_averages")
+    out_dir = os.path.join(base_dir, "data", "generated", "accuracy_region_averages")
     os.makedirs(out_dir, exist_ok=True)
 
     # Recursively find all summary.csv files
