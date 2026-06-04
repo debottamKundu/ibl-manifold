@@ -4,7 +4,6 @@ from brainbox.task.closed_loop import generate_pseudo_session
 from behavior_models.models import ActionKernel, StimulusKernel
 from .behavior_targets import optimal_Bayesian, check_bhv_fit_exists
 
-
 model_name2class = {
     "optBay": optimal_Bayesian,
     "actKernel": ActionKernel,
@@ -51,7 +50,9 @@ def generate_choices(pseudosess, trials_df, subjModel):
     )
 
     if not istrained:
-        raise ValueError("Something is wrong. The model should be trained by this line")
+        raise ValueError(
+            f"Something is wrong. The model should be trained by this line, path: {fullpath}"
+        )
 
     modelclass = model_name2class[subjModel["modeltype"]]
     model = modelclass(

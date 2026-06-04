@@ -172,3 +172,44 @@ engagement_dir: "/usr/people/kundu/code/ibl-manifold/data/generated"
 output_dir_local: "./data/ephys"
 engagement_dir_local: "./data/generated"
 output_dir_feedback_local: "./data/ephys_feedback/"
+
+# widefield specific parameters
+
+'widefield_regions': [
+    [ "ACAd" ],
+    [ "AUDd" ],
+    [ "AUDp" ],
+    [ "AUDpo" ],
+    [ "AUDv" ],
+    [ "FRP" ],
+    [ "MOB" ],  
+    [ "MOp" ],
+    [ "MOs" ],
+    [ "PL" ],
+    [ "RSPagl" ],
+    [ "RSPd" ],
+    [ "RSPv" ],
+    [ "SSp-bfd" ],
+    [ "SSp-ll" ],
+    [ "SSp-m" ],
+    [ "SSp-n" ],
+    [ "SSp-tr" ],
+    [ "SSp-ul" ],
+    [ "SSp-un" ],
+    [ "SSs" ],
+    [ "TEa" ],
+    [ "VISa" ],
+    [ "VISal" ],
+    [ "VISam" ],
+    [ "VISl" ],
+    [ "VISli" ],
+    [ "VISp" ],
+    [ "VISpl" ],
+    [ "VISpm" ],
+    [ "VISpor" ],
+    [ "VISrl" ],]
+hemisphere: ("left", "right")
+choice_frames: [-1,0]
+stimulus_frames: [0,1]
+prior_frames: [-2,-2] 
+cv_folds: 5
