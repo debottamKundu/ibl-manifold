@@ -272,12 +272,12 @@ if __name__ == "__main__":
     logger.info(f"Starting parallel processing for {total_tasks} tasks...")
 
     # run single to see if this ends?
-    ss, sube = tasks[0]
-    results = run_single_animal(ss, subepoch=sube)
+    # ss, sube = tasks[0]
+    # results = run_single_animal(ss, subepoch=sube, n_pseudosessions=1)
 
-    multiprocess = False
+    multiprocess = True
     if multiprocess:
-        with ProcessPoolExecutor(max_workers=100) as executor:
+        with ProcessPoolExecutor(max_workers=30) as executor:
             future_to_task = {
                 executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
                 for session, subepoch in tasks
