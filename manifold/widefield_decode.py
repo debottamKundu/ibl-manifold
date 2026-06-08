@@ -216,14 +216,13 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
 
 def process_session_epoch(session, subepoch):
     try:
-        print(session, subepoch)
-        #     results = run_single_animal(session, subepoch=epoch)
-        #     output_path = f"./data/generated/wifi/{session}_{subepoch}.pkl"
+        #   print(session, subepoch)
+        results = run_single_animal(session, subepoch=subepoch)
+        output_path = f"./data/generated/wifi/{session}_{subepoch}.pkl"
 
-        #     with open(output_path, "wb") as f:
-        #         pkl.dump(results, f)
-
-        #     logger.info(f"Successfully saved results to {output_path}")
+        with open(output_path, "wb") as f:
+            pkl.dump(results, f)
+            logger.info(f"Successfully saved results to {output_path}")
         return True
 
     except Exception as e:
@@ -236,7 +235,7 @@ def process_session_epoch(session, subepoch):
 
 if __name__ == "__main__":
     logger.info("Initializing ONE and searching for datasets...")
-    one = ONE()
+    one = ONE(mode='local')
     sessions_all = one.search(datasets="widefieldU.images.npy")
     sessions_all = np.asarray([str(s) for s in sessions_all])  # type: ignore
 
@@ -269,7 +268,7 @@ if __name__ == "__main__":
 
     logger.info(f"Starting parallel processing for {total_tasks} tasks...")
 
-    with ProcessPoolExecutor(max_workers=4) as executor:
+    with ProcessPoolExecutor(max_workers=100) as executor:
         future_to_task = {
             executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
             for session, subepoch in tasks
