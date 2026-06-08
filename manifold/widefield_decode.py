@@ -28,9 +28,11 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(), logging.FileHandler("decoding_pipeline_debug.log")],
 )
-logger = logging.getLogger(__name__)_
+logger = logging.getLogger(__name__)
 
-BEHAVIOR_PATH = "/Users/dkundu/Documents/phd/ibl-manifold/results_behavioral_zeta/" #NOTE: this is for choice
+BEHAVIOR_PATH = (
+    "/Users/dkundu/Documents/phd/ibl-manifold/results_behavioral_zeta/"  # NOTE: this is for choice
+)
 STIM_FRAME = 0  # onset frame
 CHOICE_FRAME = 1  # movement onset frame
 config = check_config_decoding()
@@ -46,7 +48,7 @@ def get_frame(epoch):
 
 
 def prepare_behavior(trials, session_id, mask, epoch, pseudosessions=200):
-    logger.debug(
+    logger.info(
         f"Preparing behavior targets for epoch: '{epoch}' with {pseudosessions} pseudosessions."
     )
 
@@ -154,7 +156,7 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
     trials["signcont"] = out
     trials["stim_side"] = np.sign(trials["signcont"])
 
-    logger.debug(f"Loading mask for '{epoch}'...")
+    logger.info(f"Loading mask for '{epoch}'...")
     if epoch == "stim":
         _, stimulus_behavioral_mask = load_trials_and_mask(
             one,
@@ -184,7 +186,7 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
         trials, session_id, mask, epoch, pseudosessions=n_pseudosessions
     )
 
-    logger.debug("Loading widefield epoch data...")
+    logger.info("Loading widefield epoch data...")
     data, region_names = load_widefield_epoch(
         one, session_id, trials, config["hemisphere"], epoch=epoch
     )
@@ -206,7 +208,7 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
 
         region_mean = results[region_name[0]]["mean_score"]
         region_null = np.nanmedian(results[region_name[0]]["pseudoessions"])
-        logger.debug(
+        logger.info(
             f"Region: {region_name[0]} | Mean Score: {region_mean:.4f} | Median Null: {region_null:.4f}"
         )
 
@@ -217,7 +219,8 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
 def process_session_epoch(session, subepoch):
     try:
         #   print(session, subepoch)
-        results = run_single_animal(session, subepoch=subepoch)
+        # fast execution, we treat change as null
+        results = run_single_animal(session, subepoch=subepoch, n_pseudosessions=1)
         output_path = f"./data/generated/wifi/{session}_{subepoch}.pkl"
 
         with open(output_path, "wb") as f:
@@ -235,7 +238,7 @@ def process_session_epoch(session, subepoch):
 
 if __name__ == "__main__":
     logger.info("Initializing ONE and searching for datasets...")
-    one = ONE(mode='local')
+    one = ONE(mode="local")
     sessions_all = one.search(datasets="widefieldU.images.npy")
     sessions_all = np.asarray([str(s) for s in sessions_all])  # type: ignore
 
@@ -269,7 +272,7 @@ if __name__ == "__main__":
     logger.info(f"Starting parallel processing for {total_tasks} tasks...")
 
     # run single to see if this ends?
-    (ss, sube) = tasks[0]
+    ss, sube = tasks[0]
     results = run_single_animal(ss, subepoch=sube)
 
     multiprocess = False
@@ -282,14 +285,16 @@ if __name__ == "__main__":
 
             for future in as_completed(future_to_task):
                 session, epoch = future_to_task[future]
-                try: 
+                try:
 
                     success = future.result()
                     if success:
                         successful_tasks += 1
                 except Exception as exc:
 
-                    logger.error(f"Task {(session, epoch)} generated an unexpected exception: {exc}")
+                    logger.error(
+                        f"Task {(session, epoch)} generated an unexpected exception: {exc}"
+                    )
 
             logger.info(
                 f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
