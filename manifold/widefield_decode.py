@@ -26,11 +26,11 @@ warnings.filterwarnings("ignore")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.StreamHandler(), logging.FileHandler("decoding_pipeline.log")],
+    handlers=[logging.StreamHandler(), logging.FileHandler("decoding_pipeline_debug.log")],
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__name__)_
 
-BEHAVIOR_PATH = "/Users/dkundu/Documents/phd/ibl-manifold/results_behavioral_zeta/"
+BEHAVIOR_PATH = "/Users/dkundu/Documents/phd/ibl-manifold/results_behavioral_zeta/" #NOTE: this is for choice
 STIM_FRAME = 0  # onset frame
 CHOICE_FRAME = 1  # movement onset frame
 config = check_config_decoding()
@@ -268,23 +268,29 @@ if __name__ == "__main__":
 
     logger.info(f"Starting parallel processing for {total_tasks} tasks...")
 
-    with ProcessPoolExecutor(max_workers=100) as executor:
-        future_to_task = {
-            executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
-            for session, subepoch in tasks
-        }
+    # run single to see if this ends?
+    (ss, sube) = tasks[0]
+    results = run_single_animal(ss, subepoch=sube)
 
-        for future in as_completed(future_to_task):
-            session, epoch = future_to_task[future]
-            try:
+    multiprocess = False
+    if multiprocess:
+        with ProcessPoolExecutor(max_workers=100) as executor:
+            future_to_task = {
+                executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
+                for session, subepoch in tasks
+            }
 
-                success = future.result()
-                if success:
-                    successful_tasks += 1
-            except Exception as exc:
+            for future in as_completed(future_to_task):
+                session, epoch = future_to_task[future]
+                try: 
 
-                logger.error(f"Task {(session, epoch)} generated an unexpected exception: {exc}")
+                    success = future.result()
+                    if success:
+                        successful_tasks += 1
+                except Exception as exc:
 
-        logger.info(
-            f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
-        )
+                    logger.error(f"Task {(session, epoch)} generated an unexpected exception: {exc}")
+
+            logger.info(
+                f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
+            )
