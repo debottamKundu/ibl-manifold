@@ -141,7 +141,7 @@ def process_single_session(
                 for idx in range(len(pseudo_masks)):
                     mask_prime = pseudo_masks[idx]
                     for cond in cond_names:
-                        base_times = trials[epochs_config["align"]][mask_prime[cond]].values
+                        base_times = trials[epochs_config["align"]][mask_prime[cond].values].values
                         align_times = base_times + offset
 
                         binned, _ = bin_spikes2D(
@@ -359,8 +359,8 @@ if __name__ == "__main__":
     )
 
     # first we run for subset
-    test = True
-    multiprocess = False
+    test = False
+    multiprocess = True
 
     one = ONE(
         base_url="https://openalyx.internationalbrainlab.org",
@@ -393,6 +393,8 @@ if __name__ == "__main__":
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
+            with open("./data/generated/manifold/test.pkl",'wb') as f:
+                pkl.dump(session_results, f)
 
     if multiprocess:
         run_parallel(task_list, regions_subset, pseudosession=True)
