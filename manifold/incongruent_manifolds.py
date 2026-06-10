@@ -22,6 +22,7 @@ from scipy.ndimage import convolve1d
 import traceback
 import os
 from scipy.stats import zscore
+from manifold.decoding.functions import nulldistributions
 from manifold.utils import get_trial_masks
 
 # for all regions in the IBL with enough recordings
@@ -39,7 +40,7 @@ MIN_NEURONS = 10
 BIN_SIZE = 0.01
 STRIDE = 0.001
 USE_SLIDING_WINDOW = False
-
+BEHAVIOR_PATH = "./results_behavioral_zeta/"  # NOTE: this is for choice
 # only quiescent window
 quiescent_window_params = {
     "align": "stimOn_times",
@@ -51,12 +52,21 @@ quiescent_window_params = {
 cond_names = ["Incongruent_correct", "Incongruent_incorrect"]
 
 
+def generate_pseudosessions_incongruent_conditions(trials, session_id, n_pseudosessions=200):
+
+    pseudo_masks = []
+    for psession in range(n_pseudosessions):
+        null_trials = nulldistributions.generate_null_distribution_session(
+            trials, session_id, "john-doe", "actKernel", BEHAVIOR_PATH
+        )
+        masks, _ = get_trial_masks(null_trials)
+
+        pseudo_masks.append(masks)
+    return pseudo_masks
+
+
 def process_single_session(
-    pid,
-    eid,
-    requested_regions,
-    epochs_config,
-    bin_simple,
+    pid, eid, requested_regions, epochs_config, bin_simple, pseudosession=False
 ):
     """
     Loads one session, extracts spikes, and computes PETHs for 2 conditions.
@@ -103,25 +113,51 @@ def process_single_session(
             epoch_stack = []
             offset = epochs_config.get("offset", 0.0)
 
-            for cond in cond_names:
-                base_times = trials[epochs_config["align"]][congruency_masks[cond]].values
-                align_times = base_times + offset
+            if not pseudosession:
+                for cond in cond_names:
+                    base_times = trials[epochs_config["align"]][congruency_masks[cond]].values
+                    align_times = base_times + offset
 
-                binned, _ = bin_spikes2D(
-                    region_spike_times,
-                    region_spike_ids,
-                    target_ids,
-                    align_times,
-                    epochs_config["t_pre"],
-                    epochs_config["t_post"],
-                    bin_simple,
+                    binned, _ = bin_spikes2D(
+                        region_spike_times,
+                        region_spike_ids,
+                        target_ids,
+                        align_times,
+                        epochs_config["t_pre"],
+                        epochs_config["t_post"],
+                        bin_simple,
+                    )
+                    psth = np.mean(binned, axis=0)
+
+                    epoch_stack.append(psth)
+
+                # Stack: (NeuronsxTime * Conditions)
+                session_results[region] = np.hstack(epoch_stack)
+            else:
+                pseudo_masks = generate_pseudosessions_incongruent_conditions(
+                    trials, eid, n_pseudosessions=200
                 )
-                psth = np.mean(binned, axis=0)
+                pseudosession_epochs = []
+                for idx in range(len(pseudo_masks)):
+                    mask_prime = pseudo_masks[idx]
+                    for cond in cond_names:
+                        base_times = trials[epochs_config["align"]][mask_prime[cond]].values
+                        align_times = base_times + offset
 
-                epoch_stack.append(psth)
+                        binned, _ = bin_spikes2D(
+                            region_spike_times,
+                            region_spike_ids,
+                            target_ids,
+                            align_times,
+                            epochs_config["t_pre"],
+                            epochs_config["t_post"],
+                            bin_simple,
+                        )
+                        psth = np.mean(binned, axis=0)
 
-            # Stack: (NeuronsxTime * Conditions)
-            session_results[region] = np.hstack(epoch_stack)
+                        epoch_stack.append(psth)
+                    pseudosession_epochs.append(np.hstack(epoch_stack))
+                session_results[region] = pseudosession_epochs
 
         return session_results
 
@@ -130,7 +166,12 @@ def process_single_session(
         return None
 
 
-def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_checkpoints/"):
+def run_parallel(
+    task_list,
+    regions,
+    pseudosession=False,
+    checkpoint_dir="./data/interim/session_checkpoints_pseudosessions/",
+):
 
     MAX_WORKERS = 16
     print(f"Found {len(task_list)} sessions. Starting extraction with {MAX_WORKERS} cores...")
@@ -149,6 +190,7 @@ def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_chec
                 regions,
                 quiescent_window_params,
                 BIN_SIZE,
+                pseudosession,
             ): (pid, eid)
             for (pid, eid) in task_list
         }
@@ -160,8 +202,12 @@ def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_chec
                 session_results = future.result()
 
                 if session_results is not None:
-
-                    chkpt_filename = os.path.join(checkpoint_dir, f"session_{eid}_{pid}.pkl")
+                    if not pseudosession:
+                        chkpt_filename = os.path.join(checkpoint_dir, f"session_{eid}_{pid}.pkl")
+                    else:
+                        chkpt_filename = os.path.join(
+                            checkpoint_dir, f"session_{eid}_{pid}_pseudosession.pkl"
+                        )
                     with open(chkpt_filename, "wb") as f:
                         pkl.dump(session_results, f)
                     for region, data in session_results.items():
@@ -174,7 +220,10 @@ def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_chec
         for region, region_dict in aggregated_by_region.items():
 
             if len(region_dict) > 0:
-                filename = f"./data/generated/manifold/aggregated_{region}.pkl"
+                if not pseudosession:
+                    filename = f"./data/generated/manifold/aggregated_{region}.pkl"
+                else:
+                    filename = f"./data/generated/manifold/aggregated_{region}_pseudosession.pkl"
                 with open(filename, "wb") as f:
                     pkl.dump(region_dict, f)
                 print(f"Saved {region} ({len(region_dict)} sessions) to {filename}")
@@ -310,8 +359,8 @@ if __name__ == "__main__":
     )
 
     # first we run for subset
-    test = False
-    multiprocess = True
+    test = True
+    multiprocess = False
 
     one = ONE(
         base_url="https://openalyx.internationalbrainlab.org",
@@ -340,18 +389,10 @@ if __name__ == "__main__":
             requested_regions=regions_all,
             epochs_config=quiescent_window_params,
             bin_simple=BIN_SIZE,
-        )
-        if session_results is not None:
-            print(len(session_results))  # type: ignore
-        session_results = process_single_session(
-            pid=pid[1],
-            eid=eid,
-            requested_regions=regions_all,
-            epochs_config=quiescent_window_params,
-            bin_simple=BIN_SIZE,
+            pseudosession=True,
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
 
     if multiprocess:
-        run_parallel(task_list, regions_subset)
+        run_parallel(task_list, regions_subset, pseudosession=True)
