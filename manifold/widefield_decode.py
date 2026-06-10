@@ -194,23 +194,30 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
     results = {}
     logger.info(f"Running decoding across {len(region_names)} regions...")
 
-    for region_data, region_name in tqdm(
-        zip(data, region_names), desc="Regions", total=len(region_names)
-    ):
-        if subepoch == "stim-1":
-            neural_data = region_data[0, mask, :]
-        elif subepoch == "stim-2":
-            neural_data = region_data[1, mask, :]
-        else:
-            raise ValueError
+    for subepoch_shadow in ["stim-1", "stim-2"]:
+        results_subepoch = {}
+        if subepoch_shadow == "stim-2":
+            continue
+        print(subepoch_shadow)
+        for region_data, region_name in tqdm(
+            zip(data, region_names), desc="Regions", total=len(region_names)
+        ):
 
-        results[region_name[0]] = fit_target(neural_data, target, pseudo_targets)
+            if subepoch_shadow == "stim-1":
+                neural_data = region_data[0, mask, :]
+            elif subepoch_shadow == "stim-2":
+                neural_data = region_data[1, mask, :]
+            else:
+                raise ValueError
 
-        region_mean = results[region_name[0]]["mean_score"]
-        region_null = np.nanmedian(results[region_name[0]]["pseudoessions"])
-        logger.info(
-            f"Region: {region_name[0]} | Mean Score: {region_mean:.4f} | Median Null: {region_null:.4f}"
-        )
+            results_subepoch[region_name[0]] = fit_target(neural_data, target, pseudo_targets)
+
+            region_mean = results_subepoch[region_name[0]]["mean_score"]
+            region_null = np.nanmedian(results_subepoch[region_name[0]]["pseudoessions"])
+            logger.info(
+                f"Region: {region_name[0]} | Mean Score: {region_mean:.4f} | Median Null: {region_null:.4f}"
+            )
+        results[subepoch_shadow] = results_subepoch
 
     logger.info(f"Successfully finished session: {session_id} for epoch: {epoch}")
     return results
@@ -243,7 +250,7 @@ if __name__ == "__main__":
     sessions_all = np.asarray([str(s) for s in sessions_all])  # type: ignore
 
     # since we already ran the first onee
-    # sessions_all = sessions_all[1:]
+    # sessions_all = sessions_all[3:]
 
     logger.info(f"Found {len(sessions_all)} sessions with widefield data.")
 
@@ -263,7 +270,7 @@ if __name__ == "__main__":
     #             )
     #     break  # NOTE: remove this once the first one runs properly
 
-    subepochs = ["stim-1", "stim-2"]
+    subepochs = ["stim-both"]
     tasks = list(itertools.product(sessions_all, subepochs))
 
     total_tasks = len(tasks)
@@ -274,10 +281,20 @@ if __name__ == "__main__":
     # run single to see if this ends?
     # ss, sube = tasks[0]
     # results = run_single_animal(ss, subepoch=sube, n_pseudosessions=1)
+    for session, subepoch in tasks:
+        try:
+            success = process_session_epoch(session, subepoch)
+            if success:
+                successful_tasks += 1
+        except Exception as e:
+            logger.error(f"Task {(session, subepoch)} generated an unexpected exception: {e}")
 
-    multiprocess = True
+    logger.info(
+        f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
+    )
+    multiprocess = False
     if multiprocess:
-        with ProcessPoolExecutor(max_workers=30) as executor:
+        with ProcessPoolExecutor(max_workers=5) as executor:
             future_to_task = {
                 executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
                 for session, subepoch in tasks

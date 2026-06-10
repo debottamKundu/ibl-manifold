@@ -26,10 +26,10 @@ from ibl_info.pseudosession import fit_eid
 config = check_config()
 MY_REGIONS = config["stim_prior_regions"]
 MIN_NEURONS = config["min_units"]
-BIN_SIZE = 0.01  # 10ms
-STRIDE = 0.001  # 1ms
+BIN_SIZE = 0.01  
+STRIDE = 0.001  
 USE_SLIDING_WINDOW = config["use_sliding_window"]
-MIN_TRIALS = 1  # Minimum trials per condition to include session
+MIN_TRIALS = 1
 
 EPOCHS = {
     "Quiescent": {
