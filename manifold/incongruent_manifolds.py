@@ -66,7 +66,7 @@ def process_single_session(
         password="international",
         silent=True,
         username="intbrainlab",
-        mode="local",
+        # mode="local",
     )
     br_local = BrainRegions()
     session_results = {}
@@ -149,7 +149,7 @@ def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_chec
                 regions,
                 quiescent_window_params,
                 BIN_SIZE,
-            ): pid
+            ): (pid, eid)
             for (pid, eid) in task_list
         }
 
@@ -161,7 +161,7 @@ def run_parallel(task_list, regions, checkpoint_dir="./data/interim/session_chec
 
                 if session_results is not None:
 
-                    chkpt_filename = os.path.join(checkpoint_dir, f"session_{eid}.pkl")
+                    chkpt_filename = os.path.join(checkpoint_dir, f"session_{eid}_{pid}.pkl")
                     with open(chkpt_filename, "wb") as f:
                         pkl.dump(session_results, f)
                     for region, data in session_results.items():
@@ -310,8 +310,8 @@ if __name__ == "__main__":
     )
 
     # first we run for subset
-    test = True
-    multiprocess = False
+    test = False
+    multiprocess = True
 
     one = ONE(
         base_url="https://openalyx.internationalbrainlab.org",
