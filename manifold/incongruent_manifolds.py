@@ -140,6 +140,7 @@ def process_single_session(
                 pseudosession_epochs = []
                 for idx in range(len(pseudo_masks)):
                     mask_prime = pseudo_masks[idx]
+                    epoch_stack = []
                     for cond in cond_names:
                         base_times = trials[epochs_config["align"]][mask_prime[cond].values].values
                         align_times = base_times + offset
@@ -173,7 +174,7 @@ def run_parallel(
     checkpoint_dir="./data/interim/session_checkpoints_pseudosessions/",
 ):
 
-    MAX_WORKERS = 16
+    MAX_WORKERS = 32
     print(f"Found {len(task_list)} sessions. Starting extraction with {MAX_WORKERS} cores...")
     t0 = time.time()
 
@@ -393,7 +394,7 @@ if __name__ == "__main__":
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
-            with open("./data/generated/manifold/test.pkl",'wb') as f:
+            with open("./data/generated/manifold/test.pkl", "wb") as f:
                 pkl.dump(session_results, f)
 
     if multiprocess:
