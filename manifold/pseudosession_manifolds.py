@@ -47,7 +47,7 @@ def process_eids(pickle_dump):
 
 
 if __name__ == "__main__":
-    folder = "/scratch/kundu/manifolds/pseudosessions/"
+    folder = "./data/generated/manifold/pseudosessions/"
 
     filenames = glob(folder + "*.pkl")
 
@@ -60,7 +60,7 @@ if __name__ == "__main__":
             region_pickle = {}
             region_pickle["total_distance_pseudosession"] = total_distance_pseudosession
             region_pickle["distance_matrix"] = distance_matrix
-            with open(f"pseudosession_{region_name}.pkl", "wb") as f:
+            with open(f"pseudosession_{region_name}_metrics.pkl", "wb") as f:
                 pkl.dump(region_pickle, f)
             print(f"Saved")
         except Exception as e:
