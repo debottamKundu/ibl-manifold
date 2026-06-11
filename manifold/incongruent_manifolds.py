@@ -59,11 +59,12 @@ def subsample_and_average_psth(binned_trials, target_n, n_iterations=100):
     """
     n_trials = binned_trials.shape[0]
 
+    print(n_trials, target_n)
     if n_trials == target_n:
         return np.mean(binned_trials, axis=0)
 
     subsampled_psths = []
-    for _ in range(n_iterations):
+    for iter in range(n_iterations):
         idx = np.random.choice(n_trials, target_n, replace=False)
         subsampled_psths.append(np.mean(binned_trials[idx], axis=0))
 
@@ -114,6 +115,8 @@ def process_single_session(
         for cond in cond_names:
             if np.sum(congruency_masks[cond]) < 10:
                 return None
+            else:
+                print(cond, np.sum(congruency_masks[cond]))
 
         acronyms = br_local.id2acronym(clusters["atlas_id"], mapping="Beryl")
         for region in requested_regions:
