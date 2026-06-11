@@ -52,6 +52,24 @@ quiescent_window_params = {
 cond_names = ["Incongruent_correct", "Incongruent_incorrect"]
 
 
+def subsample_and_average_psth(binned_trials, target_n, n_iterations=100):
+    """
+    Subsamples trials to a target number and averages to create a stable PSTH.
+    binned_trials shape: (n_trials, n_neurons * n_bins)
+    """
+    n_trials = binned_trials.shape[0]
+
+    if n_trials == target_n:
+        return np.mean(binned_trials, axis=0)
+
+    subsampled_psths = []
+    for _ in range(n_iterations):
+        idx = np.random.choice(n_trials, target_n, replace=False)
+        subsampled_psths.append(np.mean(binned_trials[idx], axis=0))
+
+    return np.mean(subsampled_psths, axis=0)
+
+
 def generate_pseudosessions_incongruent_conditions(trials, session_id, n_pseudosessions=200):
 
     pseudo_masks = []
@@ -110,10 +128,11 @@ def process_single_session(
 
             session_results[region] = {}
 
-            epoch_stack = []
             offset = epochs_config.get("offset", 0.0)
 
             if not pseudosession:
+
+                binned_conditions = {}
                 for cond in cond_names:
                     base_times = trials[epochs_config["align"]][congruency_masks[cond]].values
                     align_times = base_times + offset
@@ -127,10 +146,15 @@ def process_single_session(
                         epochs_config["t_post"],
                         bin_simple,
                     )
-                    psth = np.mean(binned, axis=0)
-
+                    binned_conditions[cond] = binned
+                    # psth = np.mean(binned, axis=0)
+                min_trials = min([binned.shape[0] for binned in binned_conditions.values()])
+                epoch_stack = []
+                for cond in cond_names:
+                    psth = subsample_and_average_psth(
+                        binned_conditions[cond], min_trials, n_iterations=10
+                    )
                     epoch_stack.append(psth)
-
                 # Stack: (NeuronsxTime * Conditions)
                 session_results[region] = np.hstack(epoch_stack)
             else:
@@ -140,7 +164,7 @@ def process_single_session(
                 pseudosession_epochs = []
                 for idx in range(len(pseudo_masks)):
                     mask_prime = pseudo_masks[idx]
-                    epoch_stack = []
+                    binned_conditions = {}
                     for cond in cond_names:
                         base_times = trials[epochs_config["align"]][mask_prime[cond].values].values
                         align_times = base_times + offset
@@ -154,9 +178,22 @@ def process_single_session(
                             epochs_config["t_post"],
                             bin_simple,
                         )
-                        psth = np.mean(binned, axis=0)
+                        # psth = np.mean(binned, axis=0)
+                        binned_conditions[cond] = binned
+                    min_trials = min([binned.shape[0] for binned in binned_conditions.values()])
+                    epoch_stack = []
+                    for cond in cond_names:
+                        binned_array = binned_conditions[cond]
+                        if binned_array.shape[0] > min_trials:
+                            rand_idx = np.random.choice(
+                                binned_array.shape[0], min_trials, replace=False
+                            )
+                            psth = np.mean(binned_array[rand_idx], axis=0)
+                        else:
+                            psth = np.mean(binned_array, axis=0)
 
                         epoch_stack.append(psth)
+
                     pseudosession_epochs.append(np.hstack(epoch_stack))
                 session_results[region] = pseudosession_epochs
 
@@ -390,7 +427,7 @@ if __name__ == "__main__":
             requested_regions=regions_all,
             epochs_config=quiescent_window_params,
             bin_simple=BIN_SIZE,
-            pseudosession=True,
+            pseudosession=False,
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
@@ -398,4 +435,4 @@ if __name__ == "__main__":
                 pkl.dump(session_results, f)
 
     if multiprocess:
-        run_parallel(task_list, regions_subset, pseudosession=True)
+        run_parallel(task_list, regions_subset, pseudosession=False)
