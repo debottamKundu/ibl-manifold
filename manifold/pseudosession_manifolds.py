@@ -49,7 +49,7 @@ def compute_null_distributions(pseudosession_data, n_timepoints=50, soft_norm_fa
     n_pseudosessions = len(pseudosession_data[eids[0]])
 
     null_distributions = {
-        "centroid_distance": np.zeros(n_pseudosessions),
+        "centroid_similarity": np.zeros(n_pseudosessions),
         "path_length_correct": np.zeros(n_pseudosessions),
         "path_length_incorrect": np.zeros(n_pseudosessions),
         "path_length_diff": np.zeros(n_pseudosessions),
