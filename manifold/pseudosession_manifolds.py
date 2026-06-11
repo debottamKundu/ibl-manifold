@@ -22,6 +22,8 @@ def analyze_stitched_manifold(region_data, n_timepoints=50, soft_norm_factor=5.0
     cond_incorrect = supersession[:, n_timepoints:]
     centroid_correct = np.mean(cond_correct, axis=1)
     centroid_incorrect = np.mean(cond_incorrect, axis=1)
+    # distance
+    centroid_distance = np.linalg.norm(centroid_correct - centroid_incorrect)
     real_similarity = 1 - cosine(centroid_correct, centroid_incorrect)
 
     len_correct = np.sum(np.linalg.norm(np.diff(cond_correct, axis=1), axis=0))
@@ -35,6 +37,7 @@ def analyze_stitched_manifold(region_data, n_timepoints=50, soft_norm_factor=5.0
         "path_length_correct": len_correct,
         "path_length_incorrect": len_incorrect,
         "path_length_diff": path_length_difference,
+        "centroid_distance": centroid_distance,
     }
 
 
@@ -53,6 +56,7 @@ def compute_null_distributions(pseudosession_data, n_timepoints=50, soft_norm_fa
         "path_length_correct": np.zeros(n_pseudosessions),
         "path_length_incorrect": np.zeros(n_pseudosessions),
         "path_length_diff": np.zeros(n_pseudosessions),
+        "centroid_distance": np.zeros(n_pseudosessions),
     }
 
     for p_id in range(n_pseudosessions):
@@ -67,6 +71,7 @@ def compute_null_distributions(pseudosession_data, n_timepoints=50, soft_norm_fa
         null_distributions["path_length_correct"][p_id] = metrics["path_length_correct"]
         null_distributions["path_length_incorrect"][p_id] = metrics["path_length_incorrect"]
         null_distributions["path_length_diff"][p_id] = metrics["path_length_diff"]
+        null_distributions["centroid_distance"][p_id] = metrics["centroid_distance"]
 
     return null_distributions
 
