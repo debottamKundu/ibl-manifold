@@ -63,7 +63,7 @@ def compute_null_distributions(pseudosession_data, n_timepoints=50, soft_norm_fa
             pseudo_region_data, n_timepoints=n_timepoints, soft_norm_factor=soft_norm_factor
         )
 
-        null_distributions["centroid_distance"][p_id] = metrics["centroid_distance"]
+        null_distributions["centroid_similarity"][p_id] = metrics["centroid_similarity"]
         null_distributions["path_length_correct"][p_id] = metrics["path_length_correct"]
         null_distributions["path_length_incorrect"][p_id] = metrics["path_length_incorrect"]
         null_distributions["path_length_diff"][p_id] = metrics["path_length_diff"]
