@@ -31,7 +31,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BEHAVIOR_PATH = (
-    "/Users/dkundu/Documents/phd/ibl-manifold/results_behavioral_zeta/"  # NOTE: this is for choice
+    "./results_behavioral_zeta/"  # NOTE: this is for choice
 )
 STIM_FRAME = 0  # onset frame
 CHOICE_FRAME = 1  # movement onset frame
@@ -144,7 +144,7 @@ def fit_target(neural_data, target, pseudo_target):
     return true_results
 
 
-def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="stim-1"):
+def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch=None):
     logger.info(f"--- Starting session: {session_id} | Epoch: {epoch} ---")
 
     one = ONE(mode="local")
@@ -188,24 +188,24 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
 
     logger.info("Loading widefield epoch data...")
     data, region_names = load_widefield_epoch(
-        one, session_id, trials, config["hemisphere"], epoch=epoch
-    )
+        one, session_id, trials, config["hemisphere"], epoch=epoch, response_time=True
+    ) # we can also use response time = False to default back to firstMovement times. 
 
     results = {}
     logger.info(f"Running decoding across {len(region_names)} regions...")
 
-    for subepoch_shadow in ["stim-1", "stim-2"]:
+    for subepoch_shadow in ["choice-1", "choice-2"]: # stim-1, stim-2, choice-1, choice-2? 
         results_subepoch = {}
-        if subepoch_shadow == "stim-2":
+        if subepoch_shadow  == 'choice-1':
             continue
         print(subepoch_shadow)
         for region_data, region_name in tqdm(
             zip(data, region_names), desc="Regions", total=len(region_names)
         ):
 
-            if subepoch_shadow == "stim-1":
+            if subepoch_shadow == "choice-1":
                 neural_data = region_data[0, mask, :]
-            elif subepoch_shadow == "stim-2":
+            elif subepoch_shadow == "choice-2":
                 neural_data = region_data[1, mask, :]
             else:
                 raise ValueError
@@ -223,11 +223,11 @@ def run_single_animal(session_id, epoch="stim", n_pseudosessions=200, subepoch="
     return results
 
 
-def process_session_epoch(session, subepoch):
+def process_session_epoch(session, epoch, subepoch=None):
     try:
         #   print(session, subepoch)
         # fast execution, we treat change as null
-        results = run_single_animal(session, subepoch=subepoch, n_pseudosessions=1)
+        results = run_single_animal(session, epoch=epoch, subepoch=subepoch, n_pseudosessions=200)
         output_path = f"./data/generated/wifi/{session}_{subepoch}.pkl"
 
         with open(output_path, "wb") as f:
@@ -270,8 +270,9 @@ if __name__ == "__main__":
     #             )
     #     break  # NOTE: remove this once the first one runs properly
 
-    subepochs = ["stim-both"]
-    tasks = list(itertools.product(sessions_all, subepochs))
+    # subepochs = ["stim-both"]
+    epoch = 'choice'
+    tasks = list(itertools.product(sessions_all, epoch))
 
     total_tasks = len(tasks)
     successful_tasks = 0
@@ -281,18 +282,18 @@ if __name__ == "__main__":
     # run single to see if this ends?
     # ss, sube = tasks[0]
     # results = run_single_animal(ss, subepoch=sube, n_pseudosessions=1)
-    for session, subepoch in tasks:
+    for session, epoch in tasks:
         try:
-            success = process_session_epoch(session, subepoch)
+            success = process_session_epoch(session, epoch)
             if success:
                 successful_tasks += 1
         except Exception as e:
-            logger.error(f"Task {(session, subepoch)} generated an unexpected exception: {e}")
+            logger.error(f"Task {(session, epoch)} generated an unexpected exception: {e}")
 
     logger.info(
         f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
     )
-    multiprocess = False
+    multiprocess = True
     if multiprocess:
         with ProcessPoolExecutor(max_workers=5) as executor:
             future_to_task = {
