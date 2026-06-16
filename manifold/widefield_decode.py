@@ -228,7 +228,7 @@ def process_session_epoch(session, epoch, subepoch=None):
         #   print(session, subepoch)
         # fast execution, we treat change as null
         results = run_single_animal(session, epoch=epoch, subepoch=subepoch, n_pseudosessions=200)
-        output_path = f"./data/generated/wifi/{session}_{subepoch}.pkl"
+        output_path = f"./data/generated/wifi/{session}_{epoch}_{subepoch}.pkl"
 
         with open(output_path, "wb") as f:
             pkl.dump(results, f)
@@ -237,7 +237,7 @@ def process_session_epoch(session, epoch, subepoch=None):
 
     except Exception as e:
         logger.error(
-            f"Failed processing session {session} for epoch '{subepoch}'. Error: {e}",
+            f"Failed processing session {session} for epoch {epoch}-{subepoch}. Error: {e}",
             exc_info=True,
         )
         return False
@@ -254,24 +254,10 @@ if __name__ == "__main__":
 
     logger.info(f"Found {len(sessions_all)} sessions with widefield data.")
 
-    # for session in sessions_all:
-    #     for epoch in ["stim", "choice"]:
-    #         try:
-    #             results = run_single_animal(session, epoch)
-    #             output_path = f"./data/generated/wifi/{session}_{epoch}.pkl"
-    #             with open(output_path, "wb") as f:
-    #                 pkl.dump(results, f)
-    #             logger.info(f"Saved results to {output_path}")
-    #         except Exception as e:
-
-    #             logger.error(
-    #                 f"Failed processing session {session} for epoch '{epoch}'. Error: {e}",
-    #                 exc_info=True,
-    #             )
-    #     break  # NOTE: remove this once the first one runs properly
+ 
 
     # subepochs = ["stim-both"]
-    epoch = 'choice'
+    epoch = ['choice']
     tasks = list(itertools.product(sessions_all, epoch))
 
     total_tasks = len(tasks)
@@ -280,25 +266,25 @@ if __name__ == "__main__":
     logger.info(f"Starting parallel processing for {total_tasks} tasks...")
 
     # run single to see if this ends?
-    # ss, sube = tasks[0]
-    # results = run_single_animal(ss, subepoch=sube, n_pseudosessions=1)
-    for session, epoch in tasks:
-        try:
-            success = process_session_epoch(session, epoch)
-            if success:
-                successful_tasks += 1
-        except Exception as e:
-            logger.error(f"Task {(session, epoch)} generated an unexpected exception: {e}")
+    # ss, epoch = tasks[0]
+    # results = run_single_animal(ss, epoch=epoch, n_pseudosessions=1)
+    # for session, epoch in tasks:
+    #     try:
+    #         success = process_session_epoch(session, epoch)
+    #         if success:
+    #             successful_tasks += 1
+    #     except Exception as e:
+    #         logger.error(f"Task {(session, epoch)} generated an unexpected exception: {e}")
 
-    logger.info(
-        f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
-    )
+    # logger.info(
+    #     f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
+    # )
     multiprocess = True
     if multiprocess:
-        with ProcessPoolExecutor(max_workers=5) as executor:
+        with ProcessPoolExecutor(max_workers=50) as executor:
             future_to_task = {
-                executor.submit(process_session_epoch, session, subepoch): (session, subepoch)
-                for session, subepoch in tasks
+                executor.submit(process_session_epoch, session, epoch): (session, epoch)
+                for session, epoch in tasks
             }
 
             for future in as_completed(future_to_task):
