@@ -227,7 +227,7 @@ def process_session_epoch(session, epoch, subepoch=None):
     try:
         #   print(session, subepoch)
         # fast execution, we treat change as null
-        results = run_single_animal(session, epoch=epoch, subepoch=subepoch, n_pseudosessions=200)
+        results = run_single_animal(session, epoch=epoch, subepoch=subepoch,n_pseudosessions=2)
         output_path = f"./data/generated/wifi/{session}_{epoch}_{subepoch}.pkl"
 
         with open(output_path, "wb") as f:
@@ -268,20 +268,20 @@ if __name__ == "__main__":
     # run single to see if this ends?
     # ss, epoch = tasks[0]
     # results = run_single_animal(ss, epoch=epoch, n_pseudosessions=1)
-    # for session, epoch in tasks:
-    #     try:
-    #         success = process_session_epoch(session, epoch)
-    #         if success:
-    #             successful_tasks += 1
-    #     except Exception as e:
-    #         logger.error(f"Task {(session, epoch)} generated an unexpected exception: {e}")
+    for session, epoch in tasks:
+        try:
+            success = process_session_epoch(session, epoch)
+            if success:
+                successful_tasks += 1
+        except Exception as e:
+            logger.error(f"Task {(session, epoch)} generated an unexpected exception: {e}")
 
-    # logger.info(
-    #     f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
-    # )
-    multiprocess = True
+    logger.info(
+        f"Processing complete! Successfully processed {successful_tasks}/{total_tasks} tasks."
+    )
+    multiprocess = False
     if multiprocess:
-        with ProcessPoolExecutor(max_workers=50) as executor:
+        with ProcessPoolExecutor(max_workers=6) as executor:
             future_to_task = {
                 executor.submit(process_session_epoch, session, epoch): (session, epoch)
                 for session, epoch in tasks

@@ -49,7 +49,7 @@ quiescent_window_params = {
     "t_post": 0.0,
 }
 
-cond_names = ["Incongruent_correct", "Incongruent_incorrect"]
+cond_names = ["Incongruent_correct", "Incongruent_incorrect", "Congruent_correct", "Congruent_incorrect"]
 
 
 def subsample_and_average_psth(binned_trials, target_n, n_iterations=100):

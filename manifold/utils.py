@@ -148,7 +148,7 @@ def plot_topdown(regions, scores, epoch, cmap="jet"):
     ax.axis("off")
 
 
-def get_trial_masks(trials):
+def get_trial_masks(trials, incon_only=False):
     """
     Returns boolean masks for 2 conditions (Incongruent, correct and incorrect).
     """
@@ -168,10 +168,24 @@ def get_trial_masks(trials):
     right_stimulus_incong_incorrect = has_contrast_R & is_L_block & is_error
     left_stimulus_incong_incorrect = has_contrast_L & is_R_block & is_error
 
+    right_stimulus_cong_correct = has_contrast_R & is_R_block & is_correct
+    left_stimulus_cong_correct = has_contrast_L & is_L_block & is_correct
+    right_stimulus_cong_incorrect = has_contrast_R & is_R_block & is_error
+    left_stimulus_cong_incorrect = has_contrast_L & is_L_block & is_error   
+
+
     incong_correct = right_stimulus_incong_correct | left_stimulus_incong_correct
     incong_incorrect = right_stimulus_incong_incorrect | left_stimulus_incong_incorrect
 
+    if not incon_only:
+        cong_correct = right_stimulus_cong_correct | left_stimulus_cong_correct
+        cong_incorrect = right_stimulus_cong_incorrect | left_stimulus_cong_incorrect
+
     masks["Incongruent_correct"] = incong_correct
     masks["Incongruent_incorrect"] = incong_incorrect
+
+    masks["Congruent_correct"] = cong_correct
+    masks["Congruent_incorrect"] = cong_incorrect
+
 
     return masks, list(masks.keys())
