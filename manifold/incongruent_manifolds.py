@@ -211,7 +211,7 @@ def run_parallel(
     task_list,
     regions,
     pseudosession=False,
-    checkpoint_dir="./data/interim/session_checkpoints_pseudosessions/",
+    checkpoint_dir="./data/interim/session_checkpoints/",
 ):
 
     MAX_WORKERS = 32
@@ -430,7 +430,7 @@ if __name__ == "__main__":
             requested_regions=regions_all,
             epochs_config=quiescent_window_params,
             bin_simple=BIN_SIZE,
-            pseudosession=False,
+            pseudosession=True,
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
@@ -438,4 +438,5 @@ if __name__ == "__main__":
                 pkl.dump(session_results, f)
 
     if multiprocess:
-        run_parallel(task_list, regions_subset, pseudosession=False)
+        run_parallel(task_list, regions_subset, pseudosession=True)
+        
