@@ -85,7 +85,7 @@ def generate_pseudosessions_incongruent_conditions(trials, session_id, n_pseudos
 
 
 def process_single_session(
-    pid, eid, requested_regions, epochs_config, bin_simple, pseudosession=False
+    pid, eid, requested_regions, epochs_config, bin_simple, pseudosession=False,n_pseudosessions=200,
 ):
     """
     Loads one session, extracts spikes, and computes PETHs for 2 conditions.
@@ -162,7 +162,7 @@ def process_single_session(
                 session_results[region] = np.hstack(epoch_stack)
             else:
                 pseudo_masks = generate_pseudosessions_incongruent_conditions(
-                    trials, eid, n_pseudosessions=200
+                    trials, eid, n_pseudosessions=n_pseudosessions
                 )
                 pseudosession_epochs = []
                 for idx in range(len(pseudo_masks)):
@@ -399,6 +399,62 @@ if __name__ == "__main__":
         ]
     )
 
+    regions_difference = np.asarray(
+        ['SIM',
+        'CEA',
+        'VISam',
+        'BST',
+        'ACAv',
+        'VISpm',
+        'MG',
+        'LHA',
+        'GPe',
+        'DP',
+        'PRM',
+        'ACB',
+        'SCs',
+        'PoT',
+        'SI',
+        'SNr',
+        'MD',
+        'Eth',
+        'ProS',
+        'POST',
+        'IC',
+        'SSp-m',
+        'SPVI',
+        'PB',
+        'LD',
+        'POL',
+        'GRN',
+        'SSp-tr',
+        'ANcr2',
+        'CENT3',
+        'ENTl',
+        'NTS',
+        'CENT2',
+        'SSs',
+        'BMA',
+        'SUV',
+        'ANcr1',
+        'AON',
+        'BLA',
+        'VM',
+        'LSv',
+        'PPN',
+        'RN',
+        'VPL',
+        'PARN',
+        'ENTm',
+        'DCO',
+        'PL',
+        'RSPagl',
+        'SPIV',
+        'COPY',
+        'CS',
+        'TTd'
+        ]
+    )
     # first we run for subset
     test = False
     multiprocess = True
@@ -438,5 +494,5 @@ if __name__ == "__main__":
                 pkl.dump(session_results, f)
 
     if multiprocess:
-        run_parallel(task_list, regions_subset, pseudosession=True)
+        run_parallel(task_list, regions_difference, pseudosession=False)
         
