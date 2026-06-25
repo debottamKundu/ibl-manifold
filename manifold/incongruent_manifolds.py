@@ -232,6 +232,7 @@ def run_parallel(
                 quiescent_window_params,
                 BIN_SIZE,
                 pseudosession,
+                1000    
             ): (pid, eid)
             for (pid, eid) in task_list
         }
