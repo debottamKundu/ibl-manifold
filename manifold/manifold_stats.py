@@ -151,10 +151,10 @@ if __name__ == "__main__":
             d_true = pkl.load(open(fname,'rb'))
             
             
-            real_data, null_data = get_aligned_trajectory_data(d_true, d_pseudo, output_type='pca')
+            real_data, null_data = get_aligned_trajectory_data(d_true, d_pseudo, output_type='pca',n_pseudo=1000)
             # check_neuron_mismatches(d_true, d_pseudo)
             
-            real_correct, real_incongruent, null_correct, null_incongruent = compute_pvalforhypothesis(real_data, null_data)
+            real_correct, real_incongruent, null_correct, null_incongruent = compute_pvalforhypothesis(real_data, null_data, n_pseudosessions=1000)
             dataframe.append(
                 {
                     'region':rname,
@@ -177,7 +177,7 @@ if __name__ == "__main__":
         except Exception as e:
             # print(e, rname)
             print(rname, fname, pseudo_fname)
-            # traceback.print_exc()
+            traceback.print_exc()
             break
 
     dataframe = pd.DataFrame(dataframe)

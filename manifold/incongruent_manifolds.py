@@ -23,7 +23,8 @@ import traceback
 import os
 from scipy.stats import zscore
 from manifold.decoding.functions import nulldistributions
-from manifold.utils import get_trial_masks
+from manifold.utils import get_trial_masks, get_trial_masks_engagement
+
 
 # for all regions in the IBL with enough recordings
 # get all incongruent trials
@@ -85,7 +86,7 @@ def generate_pseudosessions_incongruent_conditions(trials, session_id, n_pseudos
 
 
 def process_single_session(
-    pid, eid, requested_regions, epochs_config, bin_simple, pseudosession=False,n_pseudosessions=200,
+    pid, eid, requested_regions, epochs_config, bin_simple, pseudosession=False,n_pseudosessions=200, engagement=False, engagement_df=None
 ):
     """
     Loads one session, extracts spikes, and computes PETHs for 2 conditions.
@@ -106,17 +107,26 @@ def process_single_session(
         trials, trial_mask = load_trials_and_mask(
             one_local, eid, exclude_unbiased=True, exclude_nochoice=True
         )
+        if engagement:
+            if engagement_df is None:
+                raise ValueError
+            trials = trials.merge(engagement_df[['p_state1','p_state2','signed_contrast']],left_index=True, right_index=True)
+        # this should work!
+
         trials = trials[trial_mask]
 
         all_spike_ids = clusters["cluster_id"][spikes["clusters"]]
 
-        congruency_masks, cond_names = get_trial_masks(trials)
+        if engagement:
+            condition_masks, cond_names = get_trial_masks_engagement(trials)
+        else:
+            condition_masks, cond_names = get_trial_masks(trials)
 
         for cond in cond_names:
-            if np.sum(congruency_masks[cond]) < 10:
+            if np.sum(condition_masks[cond]) < 10:
                 return None
             else:
-                print(cond, np.sum(congruency_masks[cond]))
+                print(cond, np.sum(condition_masks[cond]))
 
         acronyms = br_local.id2acronym(clusters["atlas_id"], mapping="Beryl")
         for region in requested_regions:
@@ -137,7 +147,7 @@ def process_single_session(
 
                 binned_conditions = {}
                 for cond in cond_names:
-                    base_times = trials[epochs_config["align"]][congruency_masks[cond]].values
+                    base_times = trials[epochs_config["align"]][condition_masks[cond]].values
                     align_times = base_times + offset
 
                     binned, _ = bin_spikes2D(
@@ -211,6 +221,7 @@ def run_parallel(
     task_list,
     regions,
     pseudosession=False,
+    engagement_session=False,
     checkpoint_dir="./data/interim/session_checkpoints/",
 ):
 
@@ -221,6 +232,10 @@ def run_parallel(
     os.makedirs(checkpoint_dir, exist_ok=True)
 
     aggregated_by_region = {region: {} for region in regions}
+    if engagement_session==False:
+        engagement_df = None
+    else:
+        engagement_df = pd.read_parquet('./data/external/merged_behavioral_and_states.pqt')
 
     with concurrent.futures.ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = {
@@ -232,7 +247,9 @@ def run_parallel(
                 quiescent_window_params,
                 BIN_SIZE,
                 pseudosession,
-                1000    
+                1000,
+                engagement_session, 
+                engagement_df,    
             ): (pid, eid)
             for (pid, eid) in task_list
         }
@@ -277,185 +294,227 @@ def run_parallel(
 
 if __name__ == "__main__":
 
-    regions_subset = np.asarray(
-        [
-            "MRN",
-            "CA1",
-            "DG",
-            "CP",
-            "LP",
-            "SCm",
-            "APN",
-            "CA3",
-            "PO",
-            "PAG",
-            "MOs",
-            "VISp",
-            "VPM",
-            "VISa",
-            "MOp",
-            "ZI",
-            "LSr",
-            "IRN",
-            "SUB",
-            "CUL4 5",
-            "IP",
-            "PIR",
-            "RSPv",
-            "LGd",
-            "SSp-bfd",
-            "RSPd",
-            "ACAd",
-            "PRNr",
-            "MV",
-            "RT",
-        ]
-    )
+    # regions_subset = np.asarray(
+    #     [
+    #         "MRN",
+    #         "CA1",
+    #         "DG",
+    #         "CP",
+    #         "LP",
+    #         "SCm",
+    #         "APN",
+    #         "CA3",
+    #         "PO",
+    #         "PAG",
+    #         "MOs",
+    #         "VISp",
+    #         "VPM",
+    #         "VISa",
+    #         "MOp",
+    #         "ZI",
+    #         "LSr",
+    #         "IRN",
+    #         "SUB",
+    #         "CUL4 5",
+    #         "IP",
+    #         "PIR",
+    #         "RSPv",
+    #         "LGd",
+    #         "SSp-bfd",
+    #         "RSPd",
+    #         "ACAd",
+    #         "PRNr",
+    #         "MV",
+    #         "RT",
+    #     ]
+    # )
 
-    regions_all = np.asarray(
-        [
-            "CP",
-            "MRN",
-            "PO",
-            "LP",
-            "CA1",
-            "SCm",
-            "APN",
-            "MOp",
-            "VPM",
-            "MOs",
-            "CUL4 5",
-            "LSr",
-            "DG",
-            "VISa",
-            "SUB",
-            "SIM",
-            "CA3",
-            "VISp",
-            "PRNr",
-            "IRN",
-            "PAG",
-            "MV",
-            "CENT3",
-            "ENTm",
-            "IP",
-            "CENT2",
-            "PIR",
-            "MD",
-            "ENTl",
-            "LD",
-            "GRN",
-            "LGd",
-            "ANcr2",
-            "RSPv",
-            "SSp-bfd",
-            "IC",
-            "AON",
-            "SSs",
-            "ANcr1",
-            "VPL",
-            "RN",
-            "RT",
-            "PL",
-            "PARN",
-            "CS",
-            "PRM",
-            "ProS",
-            "VISam",
-            "ACAd",
-            "PPN",
-            "Eth",
-            "SSp-m",
-            "ACB",
-            "MG",
-            "SPIV",
-            "ZI",
-            "GPe",
-            "SPVI",
-            "DP",
-            "DCO",
-            "RSPd",
-            "RSPagl",
-            "SSp-tr",
-            "PB",
-            "COPY",
-            "SUV",
-            "TTd",
-            "SI",
-            "VISpm",
-            "POST",
-            "PoT",
-            "BST",
-            "ACAv",
-            "BMA",
-            "SCs",
-            "LHA",
-            "CEA",
-            "LSv",
-            "POL",
-            "BLA",
-            "SNr",
-            "VM",
-            "NTS",
-        ]
-    )
+    # regions_all = np.asarray(
+    #     [
+    #         "CP",
+    #         "MRN",
+    #         "PO",
+    #         "LP",
+    #         "CA1",
+    #         "SCm",
+    #         "APN",
+    #         "MOp",
+    #         "VPM",
+    #         "MOs",
+    #         "CUL4 5",
+    #         "LSr",
+    #         "DG",
+    #         "VISa",
+    #         "SUB",
+    #         "SIM",
+    #         "CA3",
+    #         "VISp",
+    #         "PRNr",
+    #         "IRN",
+    #         "PAG",
+    #         "MV",
+    #         "CENT3",
+    #         "ENTm",
+    #         "IP",
+    #         "CENT2",
+    #         "PIR",
+    #         "MD",
+    #         "ENTl",
+    #         "LD",
+    #         "GRN",
+    #         "LGd",
+    #         "ANcr2",
+    #         "RSPv",
+    #         "SSp-bfd",
+    #         "IC",
+    #         "AON",
+    #         "SSs",
+    #         "ANcr1",
+    #         "VPL",
+    #         "RN",
+    #         "RT",
+    #         "PL",
+    #         "PARN",
+    #         "CS",
+    #         "PRM",
+    #         "ProS",
+    #         "VISam",
+    #         "ACAd",
+    #         "PPN",
+    #         "Eth",
+    #         "SSp-m",
+    #         "ACB",
+    #         "MG",
+    #         "SPIV",
+    #         "ZI",
+    #         "GPe",
+    #         "SPVI",
+    #         "DP",
+    #         "DCO",
+    #         "RSPd",
+    #         "RSPagl",
+    #         "SSp-tr",
+    #         "PB",
+    #         "COPY",
+    #         "SUV",
+    #         "TTd",
+    #         "SI",
+    #         "VISpm",
+    #         "POST",
+    #         "PoT",
+    #         "BST",
+    #         "ACAv",
+    #         "BMA",
+    #         "SCs",
+    #         "LHA",
+    #         "CEA",
+    #         "LSv",
+    #         "POL",
+    #         "BLA",
+    #         "SNr",
+    #         "VM",
+    #         "NTS",
+    #     ]
+    # )
 
-    regions_difference = np.asarray(
-        ['SIM',
-        'CEA',
-        'VISam',
-        'BST',
-        'ACAv',
-        'VISpm',
-        'MG',
-        'LHA',
-        'GPe',
-        'DP',
-        'PRM',
-        'ACB',
-        'SCs',
-        'PoT',
-        'SI',
-        'SNr',
-        'MD',
-        'Eth',
-        'ProS',
-        'POST',
-        'IC',
-        'SSp-m',
-        'SPVI',
-        'PB',
-        'LD',
-        'POL',
-        'GRN',
-        'SSp-tr',
-        'ANcr2',
-        'CENT3',
-        'ENTl',
-        'NTS',
-        'CENT2',
-        'SSs',
-        'BMA',
-        'SUV',
-        'ANcr1',
-        'AON',
-        'BLA',
-        'VM',
-        'LSv',
-        'PPN',
-        'RN',
-        'VPL',
-        'PARN',
-        'ENTm',
-        'DCO',
-        'PL',
-        'RSPagl',
-        'SPIV',
-        'COPY',
-        'CS',
-        'TTd'
-        ]
-    )
+    # regions_difference = np.asarray(
+    #     ['SIM',
+    #     'CEA',
+    #     'VISam',
+    #     'BST',
+    #     'ACAv',
+    #     'VISpm',
+    #     'MG',
+    #     'LHA',
+    #     'GPe',
+    #     'DP',
+    #     'PRM',
+    #     'ACB',
+    #     'SCs',
+    #     'PoT',
+    #     'SI',
+    #     'SNr',
+    #     'MD',
+    #     'Eth',
+    #     'ProS',
+    #     'POST',
+    #     'IC',
+    #     'SSp-m',
+    #     'SPVI',
+    #     'PB',
+    #     'LD',
+    #     'POL',
+    #     'GRN',
+    #     'SSp-tr',
+    #     'ANcr2',
+    #     'CENT3',
+    #     'ENTl',
+    #     'NTS',
+    #     'CENT2',
+    #     'SSs',
+    #     'BMA',
+    #     'SUV',
+    #     'ANcr1',
+    #     'AON',
+    #     'BLA',
+    #     'VM',
+    #     'LSv',
+    #     'PPN',
+    #     'RN',
+    #     'VPL',
+    #     'PARN',
+    #     'ENTm',
+    #     'DCO',
+    #     'PL',
+    #     'RSPagl',
+    #     'SPIV',
+    #     'COPY',
+    #     'CS',
+    #     'TTd'
+    #     ]
+    # )
+    # regions_significant
+    regions_of_interest = np.asarray([
+        "ACB",
+        "IRN",
+        "CA1",
+        "SUV",
+        "LSr",
+        "DG",
+        "PO",
+        "CP",
+        "APN",
+        "SCm",
+        "GRN",
+        "SIM",
+        "MG",
+        "ACAd",
+        "ZI",
+        "VISa",
+        "MRN",
+        "VPL",
+        "MD",
+        "POL",
+        "PARN",
+        "SSp-bfd",
+        "MV",
+        "LP",
+        "LGd",
+        "RN",
+        "SSs",
+        "CA3",
+        "PAG",
+        "SI",
+        "VPM",
+        "PRNr",
+        "PoT",
+        "IP",
+        "CENT3",
+        "MOp",
+        "LD",
+        "RT",
+        "PPN",
+    ])
     # first we run for subset
     test = False
     multiprocess = True
@@ -469,7 +528,7 @@ if __name__ == "__main__":
     print("Querying BWM Units...")
 
     units_df = bwm_units(one)
-    relevant_pids = units_df[units_df["Beryl"].isin(regions_subset)]["pid"].unique()
+    relevant_pids = units_df[units_df["Beryl"].isin(regions_of_interest)]["pid"].unique()
 
     bwm_df = bwm_query(one)
     subset_df = bwm_df[bwm_df["pid"].isin(relevant_pids)]
@@ -484,10 +543,10 @@ if __name__ == "__main__":
         session_results = process_single_session(
             pid=pid[0],
             eid=eid,
-            requested_regions=regions_all,
+            requested_regions=regions_of_interest,
             epochs_config=quiescent_window_params,
             bin_simple=BIN_SIZE,
-            pseudosession=True,
+            pseudosession=False,
         )
         if session_results is not None:
             print(len(session_results))  # type: ignore
@@ -495,5 +554,5 @@ if __name__ == "__main__":
                 pkl.dump(session_results, f)
 
     if multiprocess:
-        run_parallel(task_list, regions_difference, pseudosession=False)
+        run_parallel(task_list, regions_of_interest, pseudosession=False)
         

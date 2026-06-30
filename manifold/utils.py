@@ -189,3 +189,46 @@ def get_trial_masks(trials, incon_only=False):
 
 
     return masks, list(masks.keys())
+
+def get_trial_masks_engagement(trials, incon_only=False):
+    """
+    Returns boolean masks for 2 conditions (Incongruent, correct and disengaged).
+    """
+    masks = {}
+
+    is_L_block = trials["probabilityLeft"] == 0.8
+    is_R_block = trials["probabilityLeft"] == 0.2
+
+    has_contrast_L = ~np.isnan(trials["contrastLeft"])
+    has_contrast_R = ~np.isnan(trials["contrastRight"])
+    is_engaged = trials['p_state1'] > trials['p_state2'] 
+
+
+
+    # incongruent correct
+    right_stimulus_incong_engaged = has_contrast_R & is_L_block & is_engaged
+    left_stimulus_incong_engaged = has_contrast_L & is_R_block & is_engaged
+    right_stimulus_incong_disengaged = has_contrast_R & is_L_block & ~is_engaged
+    left_stimulus_incong_disengaged = has_contrast_L & is_R_block & ~is_engaged
+
+    right_stimulus_cong_engaged = has_contrast_R & is_R_block & is_engaged
+    left_stimulus_cong_engaged = has_contrast_L & is_L_block & is_engaged
+    right_stimulus_cong_disengaged = has_contrast_R & is_R_block & ~is_engaged
+    left_stimulus_cong_disengaged = has_contrast_L & is_L_block & ~is_engaged   
+
+
+    incong_engaged = right_stimulus_incong_engaged | left_stimulus_incong_engaged
+    incong_disengaged = right_stimulus_incong_disengaged | left_stimulus_incong_disengaged
+
+    if not incon_only:
+        cong_engaged = right_stimulus_cong_engaged | left_stimulus_cong_engaged
+        cong_disengaged = right_stimulus_cong_disengaged | left_stimulus_cong_disengaged
+
+    masks["Incongruent_engaged"] = incong_engaged
+    masks["Incongruent_disengaged"] = incong_disengaged
+
+    masks["Congruent_engaged"] = cong_engaged
+    masks["Congruent_disengaged"] = cong_disengaged
+
+
+    return masks, list(masks.keys())

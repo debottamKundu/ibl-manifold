@@ -140,7 +140,7 @@ def process_single_animal(session_id, significant_pickles):
         # run ppi
         for idx in tqdm(range(len(stim_data)),desc='stim frames'):
             stim_frame = stim_data[idx][:, final_mask, :]
-            stim_frame = stim_frame[1,:] - stim_frame[0,:] # do the delta 
+            stim_frame = stim_frame[1,:] # - stim_frame[0,:] # do the delta 
             stim_region_name = stim_region_names[idx]
             for idy in range(len(choice_data)):
                 choice_frame = choice_data[idy][:, final_mask, :]
@@ -165,7 +165,7 @@ def process_session_epoch(session, significantregions):
         #   print(session, subepoch)
         # fast execution, we treat change as null
         results = process_single_animal(session, significantregions)
-        output_path = f"./data/generated/wifi/ppis/{session}_ppi_significant_regions_pca.pkl"
+        output_path = f"./data/generated/wifi/ppis/singleframe/{session}_ppi_significant_regions_pca.pkl"
 
         with open(output_path, "wb") as f:
             pkl.dump(results, f)
