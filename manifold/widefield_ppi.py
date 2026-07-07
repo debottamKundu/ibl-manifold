@@ -19,7 +19,8 @@ import pickle as pkl
 from manifold.decoding.functions import nulldistributions
 from communication_subspace.ibl_communication.utils import load_widefield_epoch
 from tqdm import tqdm
-
+from iblatlas.atlas import AllenAtlas
+from iblatlas.regions import BrainRegions
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, RobustScaler
@@ -89,7 +90,57 @@ def return_labels(trials, condition):
     valid_mask = conda|condb # type: ignore
     return labels, valid_mask
 
-def process_single_animal(session_id, significant_pickles):
+def aggregate_by_parent(data_list, region_names, parents):
+    aggregated_data = {}
+    aggregated_data = {}
+    
+    for d, name in zip(data_list, region_names):
+        
+        str_name = name[0] if isinstance(name, list) else name
+        
+        parent = parents.get(str_name, str_name)
+        
+        if parent not in aggregated_data:
+            aggregated_data[parent] = []
+        aggregated_data[parent].append(d)
+        
+    new_data = []
+    new_names = []
+    
+    for parent, d_list in aggregated_data.items():
+        new_names.append(parent)
+        new_data.append(np.concatenate(d_list, axis=2))
+        
+    return new_data, new_names
+
+def beryl_mapping():
+    ba = AllenAtlas()
+    br = BrainRegions()
+
+    widefield_regions = ["ACAd", "AUDd", "AUDp", "AUDpo", "AUDv", "FRP", "MOB", "MOp", "MOs", "PL", "RSPagl", "RSPd", "RSPv", "SSp-bfd", "SSp-ll", "SSp-m", "SSp-n", "SSp-tr", "SSp-ul", "SSp-un", "SSs", "TEa", "VISa", "VISal", "VISam", "VISl", "VISli", "VISp", "VISpl", "VISpm", "VISpor", "VISrl"]
+
+    region_ids = br.acronym2id(widefield_regions)
+
+    parent_mapping = {}
+
+    for rid in region_ids:
+
+        ancestors = br.ancestors(rid)
+        
+
+        num_ancestors = len(ancestors.id)
+        region_acronym = br.id2acronym(rid)[0]
+        
+
+        if num_ancestors > 5:
+            major_parent_acronym = ancestors.acronym[6] 
+            parent_mapping[region_acronym] = major_parent_acronym
+        else:
+            parent_mapping[region_acronym] = region_acronym
+    return parent_mapping
+
+
+def process_single_animal(session_id, significant_pickles, n_iterations=10):
 
     one = ONE(mode="local")
     ssl = SessionLoader(one, session_id)
@@ -127,35 +178,83 @@ def process_single_animal(session_id, significant_pickles):
     stim_data, stim_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="stim", regions=stim_regions)
     choice_data, choice_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="choice", response_time=True, regions=choice_regions)
 
+    # aggregate, shadow variables
+    parent_mapping = beryl_mapping()
+    stim_data, stim_region_names = aggregate_by_parent(stim_data, stim_region_names, parent_mapping)
+    choice_data, choice_region_names = aggregate_by_parent(choice_data, choice_region_names, parent_mapping)
+
+
     # stim is frame2 - frame1
     # choice is frame2
     session_results = []
-    for terms in ["correctness","congruence"]:  
-        labels, conditions = return_labels(trials, terms)
-        final_mask = combined_mask & conditions
-        labels_masked = labels[final_mask]
 
-        # compute difference between stim frames
-        # get frame 1 for choice
-        # run ppi
-        for idx in tqdm(range(len(stim_data)),desc='stim frames'):
-            stim_frame = stim_data[idx][:, final_mask, :]
-            stim_frame = stim_frame[1,:] # - stim_frame[0,:] # do the delta 
-            stim_region_name = stim_region_names[idx]
-            for idy in range(len(choice_data)):
-                choice_frame = choice_data[idy][:, final_mask, :]
-                choice_frame = choice_frame[1,:]
-                choice_region_name = choice_region_names[idy]
-                results = compute_ppi_interaction(Y=choice_frame, X=stim_frame, labels=labels_masked, reduction="PCA")
-                session_results.append({
-                    'interaction_beta':results.params[3],# type: ignore
-                    "condition":terms,
-                    "seed": stim_region_name,
-                    "target":choice_region_name,
-                    "n_trials":len(labels_masked)
-                    }) 
+    labels, conditions = return_labels(trials, "congruence")
+    final_mask = combined_mask & conditions
+
+    valid_indices = np.where(final_mask)[0]
+    idx_cond_a = [i for i in valid_indices if labels[i] == 1]
+    idx_cond_b = [i for i in valid_indices if labels[i] == -1]
+    min_trials = min(len(idx_cond_a), len(idx_cond_b))
+
+    
+    # compute difference between stim frames
+    # get frame 1 for choice
+    # run ppi
+    # for idx in tqdm(range(len(stim_data)),desc='stim frames'):
+    #     stim_frame = stim_data[idx][:, final_mask, :]
+    #     stim_frame = stim_frame[1,:] # - stim_frame[0,:] # do the delta 
+    #     stim_region_name = stim_region_names[idx]
+    #     for idy in range(len(choice_data)):
+    #         choice_frame = choice_data[idy][:, final_mask, :]
+    #         choice_frame = choice_frame[1,:]
+    #         choice_region_name = choice_region_names[idy]
+    #         results = compute_ppi_interaction(Y=choice_frame, X=stim_frame, labels=labels_masked, reduction="PCA")
+    #         session_results.append({
+    #             'interaction_beta':results.params[3],# type: ignore
+    #             "condition":"congruence",
+    #             "seed": stim_region_name,
+    #             "target":choice_region_name,
+    #             "n_trials":len(labels_masked)
+    #             }) 
     # now what
     # 
+
+    if min_trials == 0:
+        logger.warning(f"Skipping for {session_id} - 0 trials in one of the conditions.")
+        return pd.DataFrame([])
+            
+    # Run multiple iterations with subsampling
+    for iter_idx in range(n_iterations):
+        
+        # Subsample indices
+        sub_a = np.random.choice(idx_cond_a, min_trials, replace=False)
+        sub_b = np.random.choice(idx_cond_b, min_trials, replace=False)
+        
+        # Combine back together for this iteration
+        sub_indices = np.concatenate([sub_a, sub_b])
+        labels_masked = labels[sub_indices]
+        
+        for idx in tqdm(range(len(stim_data)), desc=f'stim frames - {"congruence"} - iter {iter_idx}'):
+            # Slice frames using sub_indices instead of final_mask boolean array
+            stim_frame = stim_data[idx][:, sub_indices, :]
+            stim_frame = stim_frame[1, :] -stim_frame[0,:]
+            stim_region_name = stim_region_names[idx]
+            
+            for idy in range(len(choice_data)):
+                choice_frame = choice_data[idy][:, sub_indices, :]
+                choice_frame = choice_frame[1, :]
+                choice_region_name = choice_region_names[idy]
+                
+                results = compute_ppi_interaction(Y=choice_frame, X=stim_frame, labels=labels_masked, reduction="PCA")
+                
+                session_results.append({
+                    'interaction_beta': results.params[3] if hasattr(results, 'params') else results[3], # type: ignore
+                    "condition": "congruence",
+                    "seed": stim_region_name,
+                    "target": choice_region_name,
+                    "n_trials": len(labels_masked), # Will be 2 * min_trials
+                    "iteration": iter_idx
+                })
     return pd.DataFrame(session_results)    
     
 
@@ -165,7 +264,7 @@ def process_session_epoch(session, significantregions):
         #   print(session, subepoch)
         # fast execution, we treat change as null
         results = process_single_animal(session, significantregions)
-        output_path = f"./data/generated/wifi/ppis/singleframe/{session}_ppi_significant_regions_pca.pkl"
+        output_path = f"./data/generated/wifi/ppis/deltaframe/{session}_ppi_significant_regions_pca_aggregated.pkl"
 
         with open(output_path, "wb") as f:
             pkl.dump(results, f)

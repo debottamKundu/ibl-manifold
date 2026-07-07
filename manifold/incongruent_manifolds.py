@@ -528,7 +528,7 @@ if __name__ == "__main__":
     print("Querying BWM Units...")
 
     units_df = bwm_units(one)
-    relevant_pids = units_df[units_df["Beryl"].isin(regions_of_interest)]["pid"].unique()
+    relevant_pids = units_df[units_df["Beryl"].isin(regions_all)]["pid"].unique()
 
     bwm_df = bwm_query(one)
     subset_df = bwm_df[bwm_df["pid"].isin(relevant_pids)]
