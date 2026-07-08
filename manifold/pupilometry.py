@@ -65,7 +65,7 @@ def check_session_significance(trials_df,pupil_df, window=(0,1), plot=False):
     reg_df['abs'] = np.abs(np.nan_to_num(reg_df['contrastLeft']) - np.nan_to_num(reg_df['contrastRight']))
     pupil_fluctuations = reg_df['pupil_mean']
     
-    result = linregress(abs, pupil_fluctuations)
+    result = linregress(reg_df['abs'], pupil_fluctuations)
     
     is_significant = result.pvalue < 0.05
     
@@ -215,9 +215,11 @@ if __name__ == '__main__':
         try:
             cs, fs = run_single_session(one, session_id)
             pupil_qc[session_id] = [cs,fs]
+            break
         except Exception as e:
             pupil_qc[session_id] = [np.nan, np.nan]
-    
+
+    print(cs,fs)    
     df = pd.DataFrame.from_dict(pupil_qc, orient='index', columns=['contrast','feedback'])
 
     df.to_parquet('./data/generated/pupil_qc.pqt')

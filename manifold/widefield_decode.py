@@ -47,7 +47,7 @@ def get_frame(epoch):
         raise ValueError
 
 
-def prepare_behavior(trials, session_id, mask, epoch, pseudosessions=200):
+def prepare_behavior(trials, session_id, mask, epoch, pseudosessions=200, true_choice_pseudo=True):
     logger.info(
         f"Preparing behavior targets for epoch: '{epoch}' with {pseudosessions} pseudosessions."
     )
@@ -63,6 +63,8 @@ def prepare_behavior(trials, session_id, mask, epoch, pseudosessions=200):
         pseudo_targets = np.array(pseudo_targets)
     elif epoch == "choice":
         true_targets = trials[mask]["choice"].values
+        if not true_choice_pseudo:
+            return true_targets, true_targets
         pseudo_targets = []
         for psession in range(pseudosessions):
             null_trials = nulldistributions.generate_null_distribution_session(
