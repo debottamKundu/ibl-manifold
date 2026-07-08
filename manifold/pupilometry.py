@@ -191,7 +191,7 @@ def run_single_session(one , eid):
 
     trials_df = trials[mask].copy()
     pupil_df = sess.pupil
-    is_contrast_significant, _ = check_session_significance(trials_df, pupil_df, (1,2), plot=True)
+    is_contrast_significant, _ = check_session_significance(trials_df, pupil_df, (1,2), plot=False)
     is_feedback_significant = test_feedback_modulation(trials_df, pupil_df, False)
 
     return is_contrast_significant, is_feedback_significant
