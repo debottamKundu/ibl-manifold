@@ -9,6 +9,7 @@ from pathlib import Path
 from pprint import pprint
 
 from one.api import ONE
+from scipy import stats
 from scipy.special import logit, softmax
 import os
 from os.path import join
@@ -181,6 +182,46 @@ def plot_uncorrected_feedback_psth(trials_df, pupil_df):
     return all_data
 
 
+def create_pupilometry_data(one, eid, engagement_df):
+    sess = SessionLoader(one, eid)
+    sess.load_pupil()
+
+    trials, mask = load_trials_and_mask(one, eid)
+    animal_engagement = engagement_df[engagement_df['eid']==eid].reset_index(drop=True)
+    trials_df = trials.merge(animal_engagement[['p_state1','p_state2','signed_contrast','rewarded']],left_index=True, right_index=True)
+
+    trials_df = trials[mask].copy()
+    pupil_df = sess.pupil
+    
+    assert np.all(trials['feedbackType']==trials['rewarded'])
+
+    window = (-0.250,0)
+
+    trials_df = trials_df.reset_index(drop=True) #keep everything
+    mean_pupil_sizes = np.full(len(trials_df), np.nan)
+    deviation_pupil_sizes = np.full(len(trials_df), np.nan)
+
+    for index, trial in trials_df.iterrows():
+        window_start = trial['stimOn_times'] + window[0] 
+        window_end = trial['stimOn_times'] + window[1]
+            
+        time_mask = (pupil_df['times'] >= window_start) & (pupil_df['times'] <= window_end)
+        
+        window_data = pupil_df.loc[time_mask, 'pupilDiameter_raw']
+        if not window_data.empty: # type: ignore
+            mean_pupil_sizes[index] = np.nanmean(window_data) # type: ignore
+            deviation_pupil_sizes[index] = np.nanstd(window_data) # type: ignore
+    trials_df['pupil_mean'] = mean_pupil_sizes
+    trials_df['pupil_std']  = deviation_pupil_sizes
+    trials_df['signed_contrast'] = np.nan_to_num(trials_df['contrastLeft']) - np.nan_to_num(trials_df['contrastRight'])
+    trials_df['first_movement_time'] = trials_df['firstMovement_times']-trials_df['stimOn_times']
+    trials_df['response'] = trials_df['response_times'] - trials_df['stimOn_times'] 
+    trials_df['eid'] = eid
+
+    subset_df = trials_df[["pupil_mean","pupil_std","signed_contrast","first_movement_time","response","eid","feedbackType","choice","probabilityLeft"]]
+    return subset_df
+
+
 def run_single_session(one , eid):
     
 
@@ -209,17 +250,38 @@ if __name__ == '__main__':
     bwm_df = bwm_query()
     eids = bwm_df['eid'].unique()
 
-    pupil_qc = {}
+    # pupil_qc = {}
 
+    # for session_id in eids:
+    #     try:
+    #         cs, fs = run_single_session(one, session_id)
+    #         pupil_qc[session_id] = [cs,fs]
+    #     except Exception as e:
+    #         print(e)
+    #         pupil_qc[session_id] = [np.nan, np.nan]
+
+    # print(cs,fs)    
+    # df = pd.DataFrame.from_dict(pupil_qc, orient='index', columns=['contrast','feedback'])
+
+    # df.to_parquet('./data/generated/pupil_qc.pqt')
+
+    pupil_qc = pd.read_parquet('./data/generated/pupil_qc.pqt')
+    engagement_df = pd.read_parquet('./data/external/merged_behavioral_and_states.pqt')
+
+    complete_df = []
     for session_id in eids:
         try:
-            cs, fs = run_single_session(one, session_id)
-            pupil_qc[session_id] = [cs,fs]
-            break
+            contrast_modulation = pupil_qc.loc[session_id]['contrast']
+            if contrast_modulation:
+                subset_df = create_pupilometry_data(one, session_id, engagement_df)
+                complete_df.append(subset_df)
         except Exception as e:
-            pupil_qc[session_id] = [np.nan, np.nan]
+            print(e)
 
-    print(cs,fs)    
-    df = pd.DataFrame.from_dict(pupil_qc, orient='index', columns=['contrast','feedback'])
-
-    df.to_parquet('./data/generated/pupil_qc.pqt')
+    try:
+        complete_df = pd.concat(complete_df)
+        complete_df.to_paquet('./data/complete_pupil_df.pqt')
+    except Exception as e:
+        with open('./data/generated/complete_df_pickl.pkl','wb') as f:
+            pkl.dump(complete_df, f)
+        print('pickle dump for some reason')

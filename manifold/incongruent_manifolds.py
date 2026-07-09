@@ -110,7 +110,9 @@ def process_single_session(
         if engagement:
             if engagement_df is None:
                 raise ValueError
-            trials = trials.merge(engagement_df[['p_state1','p_state2','signed_contrast']],left_index=True, right_index=True)
+            engagement_df_eid = engagement_df[engagement_df['eid']==eid].reset_index(drop=True)
+            trials = trials.merge(engagement_df_eid[['p_state1','p_state2','signed_contrast','rewarded']],left_index=True, right_index=True)
+            assert np.all(trials['feedbackType']==trials['rewarded'])
         # this should work!
 
         trials = trials[trial_mask]

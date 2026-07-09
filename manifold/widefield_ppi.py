@@ -230,12 +230,12 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
         sub_a = np.random.choice(idx_cond_a, min_trials, replace=False)
         sub_b = np.random.choice(idx_cond_b, min_trials, replace=False)
         
-        # Combine back together for this iteration
+        # Combine  ack together for this iteration
         sub_indices = np.concatenate([sub_a, sub_b])
         labels_masked = labels[sub_indices]
         
         for idx in tqdm(range(len(stim_data)), desc=f'stim frames - {"congruence"} - iter {iter_idx}'):
-            # Slice frames using sub_indices instead of final_mask boolean array
+            # Slice frames 
             stim_frame = stim_data[idx][:, sub_indices, :]
             stim_frame = stim_frame[1, :] -stim_frame[0,:]
             stim_region_name = stim_region_names[idx]
@@ -252,7 +252,7 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
                     "condition": "congruence",
                     "seed": stim_region_name,
                     "target": choice_region_name,
-                    "n_trials": len(labels_masked), # Will be 2 * min_trials
+                    "n_trials": len(labels_masked),  
                     "iteration": iter_idx
                 })
     return pd.DataFrame(session_results)    

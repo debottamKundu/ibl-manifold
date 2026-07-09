@@ -18,12 +18,14 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler, RobustScaler
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import roc_auc_score, balanced_accuracy_score
+from sklearn.decomposition import PCA
 import warnings
 
 from manifold.widefield_decode import prepare_behavior
+from manifold.widefield_ppi import aggregate_by_parent, beryl_mapping
 
 warnings.filterwarnings("ignore")
-from sklearn.decomposition import PCA
+
 
 # Configure logging
 logging.basicConfig(
@@ -32,19 +34,16 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(), logging.FileHandler("crosstemporal.log")],
 )
 logger = logging.getLogger(__name__)
+config = check_config_decoding()
 
 def cross_temporal_decode_cv(
     X_train_epoch, X_test_epoch, Y_train, Y_test, 
-    apply_pca=False, n_components=None, 
-    outer_cv_splits=5, inner_cv_splits=3, random_state=42
+    n_components=5, outer_cv_splits=5, inner_cv_splits=3, random_state=42
 ):
     """
-    X_train_epoch: ntrials x features (Stimulus epoch)
-    X_test_epoch: ntrials x features (Choice epoch)
-    Y_train: ntrials (e.g., stim_side)
-    Y_test: ntrials (e.g., choice)
+    X_train_epoch: ntrials x N_features (Stimulus Epoch)
+    X_test_epoch: ntrials x M_features (Choice Epoch)
     """
-
     outer_cv = StratifiedKFold(n_splits=outer_cv_splits, shuffle=True, random_state=random_state)
     inner_cv = StratifiedKFold(n_splits=inner_cv_splits, shuffle=True, random_state=random_state)
     oof_predictions = np.zeros(len(Y_test), dtype=float)
@@ -55,23 +54,32 @@ def cross_temporal_decode_cv(
     }
     outer_scores = []
 
-    
     for fold_idx, (train_idx, test_idx) in enumerate(outer_cv.split(X_train_epoch, Y_train)):
-               
-        X_train, y_train_fold = X_train_epoch[train_idx], Y_train[train_idx]
-
-        X_test, y_test_fold = X_test_epoch[test_idx], Y_test[test_idx]
-
-        steps = [("scaler", RobustScaler())]
         
-        if apply_pca:
-            steps.append(("pca", PCA(n_components=n_components, random_state=random_state))) # type: ignore
-            
-        steps.append(("classifier", LogisticRegression(
-            solver="lbfgs", max_iter=1000, class_weight="balanced", random_state=random_state
-        ))) # type: ignore
 
-        pipeline = Pipeline(steps)
+        X_train_fold_A = X_train_epoch[train_idx]
+        y_train_fold = Y_train[train_idx]
+
+        X_train_fold_B = X_test_epoch[train_idx] 
+        X_test_fold_B = X_test_epoch[test_idx]
+        y_test_fold = Y_test[test_idx]
+
+        scaler_A = RobustScaler()
+        pca_A = PCA(n_components=n_components, random_state=random_state)
+        
+        X_train_pca = pca_A.fit_transform(scaler_A.fit_transform(X_train_fold_A))
+
+        scaler_B = RobustScaler()
+        pca_B = PCA(n_components=n_components, random_state=random_state)
+        
+        pca_B.fit(scaler_B.fit_transform(X_train_fold_B))
+        X_test_pca = pca_B.transform(scaler_B.transform(X_test_fold_B))
+
+        pipeline = Pipeline([
+            ("classifier", LogisticRegression(
+                solver="lbfgs", max_iter=1000, class_weight="balanced", random_state=random_state
+            ))
+        ])
 
         grid_search = GridSearchCV(
             estimator=pipeline,
@@ -81,11 +89,12 @@ def cross_temporal_decode_cv(
             n_jobs=1,
         )
 
-        grid_search.fit(X_train, y_train_fold)
+        grid_search.fit(X_train_pca, y_train_fold)
         best_model = grid_search.best_estimator_
 
-        y_pred_probs = best_model.predict_proba(X_test)[:, 1]
-        y_pred = best_model.predict(X_test)
+
+        y_pred_probs = best_model.predict_proba(X_test_pca)[:, 1]
+        y_pred = best_model.predict(X_test_pca)
 
         oof_predictions[test_idx] = y_pred_probs
         fold_score = balanced_accuracy_score(y_test_fold, y_pred)
@@ -128,44 +137,32 @@ def run_single_animal_crosstemp(session_id, apply_pca=False, n_components=None):
         trials, session_id, joint_mask, epoch="choice",pseudosessions=1
     )
 
-    # 3. LOAD NEURAL DATA
-    data_stim, region_names = load_widefield_epoch(
-        one, session_id, trials, config["hemisphere"], epoch="stim", response_time=True
-    )
-    data_choice, _ = load_widefield_epoch(
-        one, session_id, trials, config["hemisphere"], epoch="choice", response_time=True
-    )
+    stim_regions = ["MOB","MOs","MOp"]
+    choice_regions = ["PL"]
+
+    stim_regions =[ [x] for x in stim_regions]
+    choice_regions = [[x] for x in choice_regions]
+
+    stim_data, stim_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="stim", regions=stim_regions)
+    choice_data, choice_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="choice", response_time=True, regions=choice_regions)
+
+    parent_mapping = beryl_mapping()
+    stim_data, stim_region_names = aggregate_by_parent(stim_data, stim_region_names, parent_mapping)
+    choice_data, choice_region_names = aggregate_by_parent(choice_data, choice_region_names, parent_mapping)
 
     results = {}
-    subepoch_train_idx = 0 
-    subepoch_test_idx = 1  
-    
-    subepoch_key = f"train_stim{subepoch_train_idx}_test_choice{subepoch_test_idx}"
-    results_subepoch = {}
 
-    for region_data_stim, region_data_choice, region_name in tqdm(
-        zip(data_stim, data_choice, region_names), desc="Regions", total=len(region_names)
-    ):
-        neural_train = region_data_stim[subepoch_train_idx, joint_mask, :]
-        neural_test = region_data_choice[subepoch_test_idx, joint_mask, :]
+    for region_stim_idx in range(len(stim_data)):
+        stim_region = stim_data[region_stim_idx]
+        stim_region = stim_region[1,:]-stim_region[0,:]
 
-        # Execute fitting with decoupled targets and PCA flag
-        results_subepoch[region_name[0]] = fit_target_crosstemp(
-            neural_train=neural_train, 
-            neural_test=neural_test, 
-            Y_train=target_stim,      # Train on Stim Side
-            Y_test=target_choice,     # Test on Choice
-            pseudo_train=pseudo_stim, 
-            pseudo_test=pseudo_choice,
-            apply_pca=apply_pca,
-            n_components=n_components
-        )
+        for region_choice_idx in range(len(choice_data)): # should be 1
+            choice_region = choice_data[region_choice_idx]
 
-        region_mean = results_subepoch[region_name[0]]["mean_score"]
-        region_null = np.nanmedian(results_subepoch[region_name[0]]["pseudosessions"])
-        logger.info(
-            f"Region: {region_name[0]} | Mean Score: {region_mean:.4f} | Median Null: {region_null:.4f}"
-        )
-        
-    results[subepoch_key] = results_subepoch
+            resultx = cross_temporal_decode_cv(stim_region, choice_region, target_stim, target_choice, apply_pca=False)
+            key = f'{stim_region_names[region_stim_idx]}, {choice_region_names[region_choice_idx]}'
+            results[key] = resultx
     return results
+
+
+# now we can run this for an animal, and the regions we want, given the decoders are significant in a particular eid
