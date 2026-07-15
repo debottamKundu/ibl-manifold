@@ -22,7 +22,7 @@ from sklearn.decomposition import PCA
 import warnings
 
 from manifold.widefield_decode import prepare_behavior
-from manifold.widefield_ppi import aggregate_by_parent, beryl_mapping
+from manifold.widefield_ppi import aggregate_by_parent, beryl_mapping, return_labels
 
 warnings.filterwarnings("ignore")
 
@@ -35,6 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 config = check_config_decoding()
+
 
 def cross_temporal_decode_cv(
     X_train_epoch, X_test_epoch, Y_train, Y_test, 
@@ -106,15 +107,28 @@ def cross_temporal_decode_cv(
         "outer_scores": outer_scores,
         "mean_score": np.mean(outer_scores),
         "std_score": np.std(outer_scores),
+        "best_model": best_model,
+        "grid":grid_search
     }
 
-def run_single_animal_crosstemp(session_id, apply_pca=False, n_components=None):
+
+def run_single_animal_crosstemp(session_id, n_components=5):
     logger.info(f"--- Starting Cross-Temporal session: {session_id} ---")
 
     one = ONE(mode="local")
     ssl = SessionLoader(one, session_id)
     ssl.load_trials(collection="alf")
     trials = ssl.trials.copy()
+    stim_regions = ["MOB","MOs","MOp"]
+    choice_regions = ["PL"]
+
+    stim_regions =[ [x] for x in stim_regions]
+    choice_regions = [[x] for x in choice_regions]
+
+
+    config = {'hemisphere':("left", "right")}
+    stim_data, stim_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="stim", regions=stim_regions)
+    choice_data, choice_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="choice", response_time=True, regions=choice_regions)
 
     out = np.nan_to_num(trials.contrastLeft) - np.nan_to_num(trials.contrastRight)
     trials["signcont"] = out
@@ -123,46 +137,68 @@ def run_single_animal_crosstemp(session_id, apply_pca=False, n_components=None):
     _, stim_mask = load_trials_and_mask(one, session_id, exclude_nochoice=False, exclude_unbiased=True)
     stimulus_non_zero = trials["signcont"] != 0
     stim_mask = stim_mask & stimulus_non_zero
-    
+
     _, choice_mask = load_trials_and_mask(one, session_id, exclude_nochoice=True, exclude_unbiased=True)
-    
+
     joint_mask = stim_mask & choice_mask
-    logger.info(f"Joint mask applied. {joint_mask.sum()} valid trials remaining.")
 
 
     target_stim, _ = prepare_behavior(
         trials, session_id, joint_mask, epoch="stim",pseudosessions=1
     )
     target_choice, _ = prepare_behavior(
-        trials, session_id, joint_mask, epoch="choice",pseudosessions=1
+        trials, session_id, joint_mask, epoch="choice",pseudosessions=1,true_choice_pseudo=False
     )
-
-    stim_regions = ["MOB","MOs","MOp"]
-    choice_regions = ["PL"]
-
-    stim_regions =[ [x] for x in stim_regions]
-    choice_regions = [[x] for x in choice_regions]
-
-    stim_data, stim_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="stim", regions=stim_regions)
-    choice_data, choice_region_names = load_widefield_epoch(one, session_id, trials, config["hemisphere"], epoch="choice", response_time=True, regions=choice_regions)
-
-    parent_mapping = beryl_mapping()
-    stim_data, stim_region_names = aggregate_by_parent(stim_data, stim_region_names, parent_mapping)
-    choice_data, choice_region_names = aggregate_by_parent(choice_data, choice_region_names, parent_mapping)
+        # parent_mapping = beryl_mapping()
 
     results = {}
-
     for region_stim_idx in range(len(stim_data)):
-        stim_region = stim_data[region_stim_idx]
+        stim_region = stim_data[region_stim_idx][:, joint_mask, :]
         stim_region = stim_region[1,:]-stim_region[0,:]
 
         for region_choice_idx in range(len(choice_data)): # should be 1
             choice_region = choice_data[region_choice_idx]
-
-            resultx = cross_temporal_decode_cv(stim_region, choice_region, target_stim, target_choice, apply_pca=False)
+            choice_region = choice_region[1,joint_mask]
+            resultx = cross_temporal_decode_cv(stim_region, choice_region, target_stim, target_stim,n_components=20)
             key = f'{stim_region_names[region_stim_idx]}, {choice_region_names[region_choice_idx]}'
             results[key] = resultx
     return results
 
-
 # now we can run this for an animal, and the regions we want, given the decoders are significant in a particular eid
+
+def check_pair_exists(significant_preloads, eid):
+    stim_targets = {"MOB", "MOp", "MOs"}
+    choice_targets = {"PL"}
+    data = significant_preloads[eid]
+    stim_exists = stim_targets.issubset(set(data['stim']))
+    choice_exists = choice_targets.issubset(set(data['choice']))
+    exists = stim_exists & choice_exists
+    return exists
+
+if __name__=='__main__':
+    one = ONE(mode="local")
+    sessions_all = one.search(datasets="widefieldU.images.npy")
+    sessions_all = np.asarray([str(s) for s in sessions_all])  # type: ignore
+    logger.info(f"Found {len(sessions_all)} sessions with widefield data.")
+
+
+    total_tasks = len(sessions_all)
+    successful_tasks = 0
+
+    logger.info(f"Starting parallel processing for {total_tasks} tasks...")
+
+
+    with open("./data/processed/significant_stims_choice.pkl",'rb') as f:
+        significant_preloads = pkl.load(f)
+
+    for session_id in sessions_all:
+
+        try:
+            existence = check_pair_exists(significant_preloads, session_id)
+
+            if existence:
+                results = run_single_animal_crosstemp(session_id, n_components=20)
+                with open(f'./data/generated/crosstemporal/{session_id}_crosstemporal_stimonly.pkl','wb') as f:
+                    pkl.dump(results, f)
+        except Exception as e:
+            print(e)

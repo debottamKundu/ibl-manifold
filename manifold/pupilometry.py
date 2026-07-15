@@ -182,26 +182,33 @@ def plot_uncorrected_feedback_psth(trials_df, pupil_df):
     return all_data
 
 
-def create_pupilometry_data(one, eid, engagement_df):
+def create_pupilometry_data(one, eid, engagement_df, scalar_motivation, action_kernel):
     sess = SessionLoader(one, eid)
     sess.load_pupil()
 
-    trials, mask = load_trials_and_mask(one, eid)
+    trials_df, mask = load_trials_and_mask(one, eid)
     animal_engagement = engagement_df[engagement_df['eid']==eid].reset_index(drop=True)
-    trials_df = trials.merge(animal_engagement[['p_state1','p_state2','signed_contrast','rewarded']],left_index=True, right_index=True)
+    stimulus_engage = scalar_motivation[eid]
+    akernel_df = action_kernel[eid]
 
-    trials_df = trials[mask].copy()
+
+    trials_df = trials_df.merge(animal_engagement[['p_state1','p_state2','signed_contrast','rewarded']],left_index=True, right_index=True)
+    trials_df['akernel_prior'] = akernel_df['prior']
+    trials_df['pe_right'] = akernel_df['prediction_error_right']
+    trials_df['motivation_scalar'] = stimulus_engage
+
+    masked_trials_df = trials_df[mask].copy()
     pupil_df = sess.pupil
     
-    assert np.all(trials['feedbackType']==trials['rewarded'])
+    assert np.all(masked_trials_df['feedbackType']==masked_trials_df['rewarded'])
 
     window = (-0.250,0)
 
-    trials_df = trials_df.reset_index(drop=True) #keep everything
-    mean_pupil_sizes = np.full(len(trials_df), np.nan)
-    deviation_pupil_sizes = np.full(len(trials_df), np.nan)
+    masked_trials_df = masked_trials_df.reset_index(drop=True) #keep everything
+    mean_pupil_sizes = np.full(len(masked_trials_df), np.nan)
+    deviation_pupil_sizes = np.full(len(masked_trials_df), np.nan)
 
-    for index, trial in trials_df.iterrows():
+    for index, trial in masked_trials_df.iterrows():
         window_start = trial['stimOn_times'] + window[0] 
         window_end = trial['stimOn_times'] + window[1]
             
@@ -211,15 +218,14 @@ def create_pupilometry_data(one, eid, engagement_df):
         if not window_data.empty: # type: ignore
             mean_pupil_sizes[index] = np.nanmean(window_data) # type: ignore
             deviation_pupil_sizes[index] = np.nanstd(window_data) # type: ignore
-    trials_df['pupil_mean'] = mean_pupil_sizes
-    trials_df['pupil_std']  = deviation_pupil_sizes
-    trials_df['signed_contrast'] = np.nan_to_num(trials_df['contrastLeft']) - np.nan_to_num(trials_df['contrastRight'])
-    trials_df['first_movement_time'] = trials_df['firstMovement_times']-trials_df['stimOn_times']
-    trials_df['response'] = trials_df['response_times'] - trials_df['stimOn_times'] 
-    trials_df['eid'] = eid
+    masked_trials_df['pupil_mean'] = mean_pupil_sizes
+    masked_trials_df['pupil_std']  = deviation_pupil_sizes
+    masked_trials_df['signed_contrast'] = np.nan_to_num(masked_trials_df['contrastLeft']) - np.nan_to_num(masked_trials_df['contrastRight'])
+    masked_trials_df['first_movement_time'] = masked_trials_df['firstMovement_times']-masked_trials_df['stimOn_times']
+    masked_trials_df['response'] = masked_trials_df['response_times'] - masked_trials_df['stimOn_times'] 
+    masked_trials_df['eid'] = eid
 
-    subset_df = trials_df[["pupil_mean","pupil_std","signed_contrast","first_movement_time","response","eid","feedbackType","choice","probabilityLeft"]]
-    return subset_df
+    return trials_df, masked_trials_df
 
 
 def run_single_session(one , eid):
@@ -266,21 +272,33 @@ if __name__ == '__main__':
     # df.to_parquet('./data/generated/pupil_qc.pqt')
 
     pupil_qc = pd.read_parquet('./data/generated/pupil_qc.pqt')
-    engagement_df = pd.read_parquet('./data/external/merged_behavioral_and_states.pqt')
+    engagement_df = pd.read_parquet('./data/external/merged_behavioral_and_states.pqt') # this is the glm engagement
+
+    with open('./data/external/all_eids_engagement.pkl','rb') as f:
+        scalar_motivation = pkl.load(f)
+    
+    with open('./data/external/action_kernel.pkl','rb') as f:
+        akernel = pkl.load(f)
 
     complete_df = []
+    complete_pickle = {}
     for session_id in eids:
         try:
             contrast_modulation = pupil_qc.loc[session_id]['contrast']
             if contrast_modulation:
-                subset_df = create_pupilometry_data(one, session_id, engagement_df)
-                complete_df.append(subset_df)
+                subset_df_complete, subset_df_masked = create_pupilometry_data(one, session_id, engagement_df, scalar_motivation, akernel)
+                complete_df.append(subset_df_masked)
+                complete_pickle[session_id] = subset_df_complete 
         except Exception as e:
             print(e)
 
     try:
         complete_df = pd.concat(complete_df)
-        complete_df.to_paquet('./data/complete_pupil_df.pqt')
+        complete_df.to_parquet('./data/complete_pupil_df.pqt')
+
+        with open('./data/generated/complete_df_untruncated.pkl','wb') as f:
+            pkl.dump(complete_pickle, f)
+
     except Exception as e:
         with open('./data/generated/complete_df_pickl.pkl','wb') as f:
             pkl.dump(complete_df, f)
