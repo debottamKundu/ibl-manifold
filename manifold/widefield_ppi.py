@@ -79,11 +79,15 @@ def return_labels(trials, condition):
     if condition == 'congruence':
         conda = masks['Congruent_correct'] | masks['Congruent_incorrect']
         condb = masks['Incongruent_correct'] | masks['Incongruent_incorrect']       
-
     elif condition == 'correctness':
         conda = masks['Incongruent_correct']
         condb = masks['Incongruent_incorrect']
-
+    elif condition == 'congruence_correctness':
+        conda = masks['Congruent_correct']
+        condb = masks['Congruent_incorrect']
+    else:
+        raise NotImplementedError
+    
     labels[conda] = 1
     labels[condb] = -1 
 
@@ -140,7 +144,7 @@ def beryl_mapping():
     return parent_mapping
 
 
-def process_single_animal(session_id, significant_pickles, n_iterations=10):
+def process_single_animal(session_id, significant_pickles,condition_name='congruence', n_iterations=10):
 
     one = ONE(mode="local")
     ssl = SessionLoader(one, session_id)
@@ -188,7 +192,7 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
     # choice is frame2
     session_results = []
 
-    labels, conditions = return_labels(trials, "congruence")
+    labels, conditions = return_labels(trials, condition_name)
     final_mask = combined_mask & conditions
 
     valid_indices = np.where(final_mask)[0]
@@ -222,6 +226,8 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
     if min_trials == 0:
         logger.warning(f"Skipping for {session_id} - 0 trials in one of the conditions.")
         return pd.DataFrame([])
+    else:
+        logger.info(f'Min trials = {min_trials}')
             
     # Run multiple iterations with subsampling
     for iter_idx in range(n_iterations):
@@ -234,10 +240,11 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
         sub_indices = np.concatenate([sub_a, sub_b])
         labels_masked = labels[sub_indices]
         
-        for idx in tqdm(range(len(stim_data)), desc=f'stim frames - {"congruence"} - iter {iter_idx}'):
-            # Slice frames 
+        for idx in tqdm(range(len(stim_data)), desc=f'stim frames - {condition_name} - iter {iter_idx}'):
+            # Slice frames  
+
             stim_frame = stim_data[idx][:, sub_indices, :]
-            stim_frame = stim_frame[1, :] -stim_frame[0,:]
+            stim_frame = stim_frame[1, :] #- stim_frame[0,:] 
             stim_region_name = stim_region_names[idx]
             
             for idy in range(len(choice_data)):
@@ -249,7 +256,7 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
                 
                 session_results.append({
                     'interaction_beta': results.params[3] if hasattr(results, 'params') else results[3], # type: ignore
-                    "condition": "congruence",
+                    "condition": condition_name,
                     "seed": stim_region_name,
                     "target": choice_region_name,
                     "n_trials": len(labels_masked),  
@@ -259,12 +266,13 @@ def process_single_animal(session_id, significant_pickles, n_iterations=10):
     
 
 
-def process_session_epoch(session, significantregions):
+def process_session_epoch(session, significantregions, condition_name='congruence'):
     try:
         #   print(session, subepoch)
         # fast execution, we treat change as null
-        results = process_single_animal(session, significantregions)
-        output_path = f"./data/generated/wifi/ppis/deltaframe/{session}_ppi_significant_regions_pca_aggregated.pkl"
+        results = process_single_animal(session, significantregions, condition_name)
+        #NOTE: we are doing incongreuent correct/error
+        output_path = f"./data/generated/wifi/ppis/incongruent_correctness/frame1/{session}_ppi_significant_regions_pca_aggregated_{condition_name}.pkl"
 
         with open(output_path, "wb") as f:
             pkl.dump(results, f)
@@ -286,14 +294,14 @@ if __name__ == "__main__":
     sessions_all = np.asarray([str(s) for s in sessions_all])  # type: ignore
     logger.info(f"Found {len(sessions_all)} sessions with widefield data.")
 
- 
+    condition_name = 'correctness'
 
     # subepochs = ["stim-both"]
     
     total_tasks = len(sessions_all)
     successful_tasks = 0
 
-    logger.info(f"Starting parallel processing for {total_tasks} tasks...")
+    logger.info(f"Starting serial processing for {total_tasks} tasks...")
 
 
     with open("./data/processed/significant_stims_choice.pkl",'rb') as f:
@@ -303,7 +311,7 @@ if __name__ == "__main__":
 
     for session in sessions_all:
         try:
-            success = process_session_epoch(session, significant_preloads)
+            success = process_session_epoch(session, significant_preloads, condition_name=condition_name)
             if success:
                 successful_tasks += 1
         except Exception as e:
