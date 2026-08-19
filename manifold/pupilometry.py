@@ -132,7 +132,7 @@ def plot_uncorrected_feedback_psth(trials_df, pupil_df):
         feedback_time = trial['feedback_times']
         fb_label = 'Reward' if trial['feedbackType'] == 1 else 'Error'
         
-        win_start = feedback_time - 0.25
+        win_start = feedback_time
         win_end = feedback_time + 1.5
         
         
@@ -210,7 +210,7 @@ def feedback_pupilometry(one, eid, engagement_df, scalar_motivation, action_kern
     pupil_df['session_zscore'] = zscore(pupil_df['pupilDiameter_raw'], nan_policy='omit')
     for i, trial in masked_trials_df.iterrows():
         feedback_time = trial['feedback_times']
-        win_start = feedback_time - 0.25
+        win_start = feedback_time
         win_end = feedback_time + 1.5
         
         
@@ -229,6 +229,8 @@ def feedback_pupilometry(one, eid, engagement_df, scalar_motivation, action_kern
     masked_trials_df['eid'] = eid
     masked_trials_df['pupil_size'] = all_pupil_sizes
     masked_trials_df['pupil_timestamps'] = all_pupil_times
+    masked_trials_df['mean_pupil_size'] = np.nanmean(all_pupil_times)
+    masked_trials_df['std_pupil_size'] = np.nanstd(all_pupil_times)
 
     return masked_trials_df
 
