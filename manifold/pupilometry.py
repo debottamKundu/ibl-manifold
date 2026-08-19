@@ -203,6 +203,9 @@ def feedback_pupilometry(one, eid, engagement_df, scalar_motivation, action_kern
     
     assert np.all(masked_trials_df['feedbackType']==masked_trials_df['rewarded'])
 
+    all_pupil_sizes = []
+    all_pupil_times = []
+
     # get feedback onset, 200ms before to 1.5 seconds after, no mean, entire time series.
     pupil_df['session_zscore'] = zscore(pupil_df['pupilDiameter_raw'], nan_policy='omit')
     for i, trial in masked_trials_df.iterrows():
@@ -216,12 +219,16 @@ def feedback_pupilometry(one, eid, engagement_df, scalar_motivation, action_kern
         p_zscored = pupil_df.loc[mask, 'session_zscore'].values
         
         if len(t_raw) < 10 or np.isnan(p_zscored).all():
+            all_pupil_sizes.append(None)
+            all_pupil_times.append(None)
             continue
 
-        masked_trials_df.loc[i,'pupil_size'] = p_zscored
-        masked_trials_df.lo[i,'pupil_timestamps'] = t_raw
+        all_pupil_sizes.append(p_zscored)
+        all_pupil_times.append(t_raw)
 
     masked_trials_df['eid'] = eid
+    masked_trials_df['pupil_size'] = all_pupil_sizes
+    masked_trials_df['pupil_timestamps'] = all_pupil_times
 
     return masked_trials_df
 

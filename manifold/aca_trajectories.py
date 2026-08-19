@@ -16,7 +16,7 @@ from iblatlas.regions import BrainRegions
 def load_ancillary_data(base_dir):
     """
     Load behavioral states, motivation scalar, and action kernel data.
-    Looks in standard locations under base_dir.
+    Looks in standard locations under base_dir. 
     """
     
     engagement_df = pd.read_parquet('./data/external/merged_behavioral_and_states.pqt') # this is the glm engagement
@@ -277,8 +277,8 @@ def main():
     
     
     
-    base_dir = "./"
-    out_dir = "./data/generated/aca_trajectories/"
+    base_dir = Path("./")
+    out_dir = Path("./data/generated/aca_trajectories/")
     single_eid = False
     run_pipeline(base_dir=base_dir, single_eid=single_eid, output_dir=out_dir, save_parquet=True, save_pickle=True)
 
