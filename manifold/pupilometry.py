@@ -91,7 +91,7 @@ def test_feedback_modulation(trials_df, pupil_df, plot=False):
     valid_trials = trials_df.dropna(subset=['feedback_times', 'feedbackType'])
     
     for i, trial in valid_trials.iterrows():
-        win_start = trial['feedback_times']
+        win_start = trial['feedback_times']-0.2
         win_end = trial['feedback_times'] + 1.5
         
         mask = (pupil_df['times'] >= win_start) & (pupil_df['times'] <= win_end)
@@ -181,6 +181,50 @@ def plot_uncorrected_feedback_psth(trials_df, pupil_df):
     
     return all_data
 
+def feedback_pupilometry(one, eid, engagement_df, scalar_motivation, action_kernel):
+
+    sess = SessionLoader(one, eid)
+    sess.load_pupil()
+
+    trials_df, mask = load_trials_and_mask(one, eid)
+    animal_engagement = engagement_df[engagement_df['eid']==eid].reset_index(drop=True)
+    stimulus_engage = scalar_motivation[eid]
+    akernel_df = action_kernel[eid]
+
+
+    trials_df = trials_df.merge(animal_engagement[['p_state1','p_state2','signed_contrast','rewarded']],left_index=True, right_index=True)
+    trials_df['akernel_prior'] = akernel_df['prior']
+    trials_df['pe_right'] = akernel_df['prediction_error_right']
+    trials_df['motivation_scalar'] = stimulus_engage
+
+    masked_trials_df = trials_df[mask].copy()
+    masked_trials_df = masked_trials_df.dropna(subset=['feedback_times','feedbackType'])
+    pupil_df = sess.pupil
+    
+    assert np.all(masked_trials_df['feedbackType']==masked_trials_df['rewarded'])
+
+    # get feedback onset, 200ms before to 1.5 seconds after, no mean, entire time series.
+    pupil_df['session_zscore'] = zscore(pupil_df['pupilDiameter_raw'], nan_policy='omit')
+    for i, trial in masked_trials_df.iterrows():
+        feedback_time = trial['feedback_times']
+        win_start = feedback_time - 0.25
+        win_end = feedback_time + 1.5
+        
+        
+        mask = (pupil_df['times'] >= win_start) & (pupil_df['times'] <= win_end)
+        t_raw = pupil_df.loc[mask, 'times'].values
+        p_zscored = pupil_df.loc[mask, 'session_zscore'].values
+        
+        if len(t_raw) < 10 or np.isnan(p_zscored).all():
+            continue
+
+        masked_trials_df.loc[i,'pupil_size'] = p_zscored
+        masked_trials_df.lo[i,'pupil_timestamps'] = t_raw
+
+    masked_trials_df['eid'] = eid
+
+    return masked_trials_df
+
 
 def create_pupilometry_data(one, eid, engagement_df, scalar_motivation, action_kernel):
     sess = SessionLoader(one, eid)
@@ -221,7 +265,7 @@ def create_pupilometry_data(one, eid, engagement_df, scalar_motivation, action_k
     masked_trials_df['pupil_mean'] = mean_pupil_sizes
     masked_trials_df['pupil_std']  = deviation_pupil_sizes
     masked_trials_df['signed_contrast'] = np.nan_to_num(masked_trials_df['contrastLeft']) - np.nan_to_num(masked_trials_df['contrastRight'])
-    masked_trials_df['first_movement_time'] = masked_trials_df['firstMovement_times']-masked_trials_df['stimOn_times']
+    
     masked_trials_df['response'] = masked_trials_df['response_times'] - masked_trials_df['stimOn_times'] 
     masked_trials_df['eid'] = eid
 
@@ -281,25 +325,26 @@ if __name__ == '__main__':
         akernel = pkl.load(f)
 
     complete_df = []
-    complete_pickle = {}
+    # complete_pickle = {}
     for session_id in eids:
         try:
             contrast_modulation = pupil_qc.loc[session_id]['contrast']
             if contrast_modulation:
-                subset_df_complete, subset_df_masked = create_pupilometry_data(one, session_id, engagement_df, scalar_motivation, akernel)
+                #subset_df_complete, subset_df_masked = create_pupilometry_data(one, session_id, engagement_df, scalar_motivation, akernel)
+                subset_df_masked = feedback_pupilometry(one, session_id, engagement_df, scalar_motivation, akernel)
                 complete_df.append(subset_df_masked)
-                complete_pickle[session_id] = subset_df_complete 
+                # complete_pickle[session_id] = subset_df_complete 
         except Exception as e:
             print(e)
 
     try:
         complete_df = pd.concat(complete_df)
-        complete_df.to_parquet('./data/complete_pupil_df.pqt')
+        complete_df.to_parquet('./data/complete_pupil_df_feedback.pqt')
 
-        with open('./data/generated/complete_df_untruncated.pkl','wb') as f:
-            pkl.dump(complete_pickle, f)
+        # with open('./data/generated/complete_df_untruncated.pkl','wb') as f:
+        #     pkl.dump(complete_pickle, f)
 
     except Exception as e:
-        with open('./data/generated/complete_df_pickl.pkl','wb') as f:
+        with open('./data/generated/complete_pupil_df_pickl_feedback.pkl','wb') as f:
             pkl.dump(complete_df, f)
         print('pickle dump for some reason')

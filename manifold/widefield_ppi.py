@@ -73,18 +73,21 @@ def compute_ppi_interaction(Y, X, labels, reduction='mean'):
 
 def return_labels(trials, condition):
     masks, _ = get_trial_masks(trials)
-    n_trials = len(masks['Congruent_correct'])
+    n_trials = len(masks['Congruent_correct']) # it is a mask on all trials, not only congruent correct. no panic
     labels = np.zeros(n_trials)
 
     if condition == 'congruence':
         conda = masks['Congruent_correct'] | masks['Congruent_incorrect']
         condb = masks['Incongruent_correct'] | masks['Incongruent_incorrect']       
-    elif condition == 'correctness':
+    elif condition == 'incongruence_correctness':
         conda = masks['Incongruent_correct']
         condb = masks['Incongruent_incorrect']
     elif condition == 'congruence_correctness':
         conda = masks['Congruent_correct']
         condb = masks['Congruent_incorrect']
+    elif condition == 'correctness':
+        conda = masks['Congruent_correct'] | masks['Incongruent_correct']
+        condb = masks['Congruent_incorrect'] | masks['Incongruent_incorrect']
     else:
         raise NotImplementedError
     
@@ -244,7 +247,7 @@ def process_single_animal(session_id, significant_pickles,condition_name='congru
             # Slice frames  
 
             stim_frame = stim_data[idx][:, sub_indices, :]
-            stim_frame = stim_frame[1, :] #- stim_frame[0,:] 
+            stim_frame = stim_frame[1, :] - stim_frame[0,:] 
             stim_region_name = stim_region_names[idx]
             
             for idy in range(len(choice_data)):
@@ -268,11 +271,10 @@ def process_single_animal(session_id, significant_pickles,condition_name='congru
 
 def process_session_epoch(session, significantregions, condition_name='congruence'):
     try:
-        #   print(session, subepoch)
-        # fast execution, we treat change as null
+
         results = process_single_animal(session, significantregions, condition_name)
-        #NOTE: we are doing incongreuent correct/error
-        output_path = f"./data/generated/wifi/ppis/incongruent_correctness/frame1/{session}_ppi_significant_regions_pca_aggregated_{condition_name}.pkl"
+        #NOTE: we are doing all correct/error
+        output_path = f"./data/generated/wifi/ppis/correctness/delta/{session}_ppi_significant_regions_pca_aggregated_{condition_name}.pkl"
 
         with open(output_path, "wb") as f:
             pkl.dump(results, f)
