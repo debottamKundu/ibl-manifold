@@ -62,14 +62,16 @@ def run_fit(session_id, subject_name, n_pseudo=200):
     return x
 
 def combine_results_into_frame():
-    filenames = glob('./data/generated/prior_sig/**/*_both*.pkl')
+    filenames = glob('./data/generated/prior_sig/**/*_both*.pkl', recursive=True)
     resultsdf = []
     failedloads = 0
-    indexers = ["subject", "eid", "region", "N_units"]
-    for fname in filenames:
+    indexers = ["subject", "eid", "N_units"]
+    for fname in tqdm(filenames):
         try:
             with open(fname,'rb') as f:
                 results = pkl.load(f)
+
+            regionname = fname.rsplit("/")[-1].rsplit("_")[0]
             if results['fit'] is None:
                 continue
             for iteration in range(len(results['fit'])):
@@ -79,6 +81,7 @@ def combine_results_into_frame():
                             "run_id": results["fit"][iteration]["run_id"] + 1,
                             "score_test": results["fit"][iteration]["scores_test_full"],
                             "n_trials": sum(results['fit'][iteration]['mask'][0]),
+                            "region":regionname,
                     }
                 resultsdf.append(tmpdict)
         except Exception as e:
