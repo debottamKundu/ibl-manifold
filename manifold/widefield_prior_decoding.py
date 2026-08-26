@@ -89,9 +89,9 @@ def combine_results_into_frame():
     print(f'Failed loads:{failedloads}')
 
 
-if __name__ == "__main__":
+def run_analysis():
     one = ONE(mode="local")
-
+    
     significant_pkl_path = Path("./data/processed/significant_stims_choice.pkl")
 
     with open(significant_pkl_path, "rb") as f:
@@ -112,3 +112,6 @@ if __name__ == "__main__":
         except Exception as e:
             print(e)
         break
+
+if __name__ == "__main__":
+    combine_results_into_frame()    
