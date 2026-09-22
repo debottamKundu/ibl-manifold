@@ -70,7 +70,6 @@ def combine_results_into_frame():
         try:
             with open(fname,'rb') as f:
                 results = pkl.load(f)
-
             regionname = fname.rsplit("/")[-1].rsplit("_")[0]
             if results['fit'] is None:
                 continue

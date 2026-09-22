@@ -86,10 +86,10 @@ def train_and_project_temporal_nested(X_correct_all_frames, y_correct, X_incorre
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     
     if classifier_name == 'svc':
-        base_model = LinearSVC(penalty='l2', dual=False, max_iter=10000, random_state=42)
+        base_model = LinearSVC(penalty='l2', dual=False, max_iter=10000, random_state=42, class_weight='balanced')
         param_grid = {'clf__C': np.logspace(-3, 2, 6)}
     elif classifier_name == 'ridge':
-        base_model = RidgeClassifier(random_state=42)
+        base_model = RidgeClassifier(random_state=42, class_weight='balanced')
         param_grid = {'clf__alpha': np.logspace(-3, 2, 6)}
         
     X_train_target = X_correct_all_frames[train_frame_idx]
@@ -140,10 +140,10 @@ def train_and_project_temporal_single(X_correct_all_frames, y_correct, X_incorre
     n_frames = X_correct_all_frames.shape[0]
     
     if classifier_name == 'svc':
-        base_model = LinearSVC(penalty='l2', dual=False, max_iter=10000, random_state=42)
+        base_model = LinearSVC(penalty='l2', dual=False, max_iter=10000, random_state=42, class_weight='balanced')
         param_grid = {'clf__C': np.logspace(-3, 2, 6)}
     elif classifier_name == 'ridge':
-        base_model = RidgeClassifier(random_state=42)
+        base_model = RidgeClassifier(random_state=42, class_weight='balanced')
         param_grid = {'clf__alpha': np.logspace(-3, 2, 6)}
         
     pipeline = Pipeline([
@@ -179,6 +179,8 @@ def train_and_project_temporal_single(X_correct_all_frames, y_correct, X_incorre
     return corr_projections_by_frame, inc_projections_by_frame, model_info
 
 def process_session(one, session_id, significant_pickles, stim_region_name='VISp', choice_region_name='MOs', use_nested_cv=False, aggregate_parent=False, only_congruent=False):
+
+    #NOTE: Rudely commented out all choice regions, must be a better way of going about this.
     sig_stim = significant_pickles.get(session_id, {}).get('stim', [])
     sig_choice = significant_pickles.get(session_id, {}).get('choice', [])
     
@@ -196,108 +198,118 @@ def process_session(one, session_id, significant_pickles, stim_region_name='VISp
     stim_mask = behavioral_mask & (trials['signed_contrast'] != 0)
     choice_mask = behavioral_mask
     
-    if only_congruent:
-        stim_mask = stim_mask & trials['is_congruent']
-        choice_mask = choice_mask & trials['is_congruent']
-    
     correct_mask = trials["feedbackType"] == 1
-    incorrect_mask = trials["feedbackType"] == -1
     
-    stim_correct_idx = np.where(stim_mask & correct_mask)[0]
-    stim_incorrect_idx = np.where(stim_mask & incorrect_mask)[0]
+    # Define training masks (always correct trials, plus congruency if requested)
+    stim_train_mask = stim_mask & correct_mask
+    choice_train_mask = choice_mask & correct_mask
+    if only_congruent:
+        stim_train_mask = stim_train_mask & trials['is_congruent']
+        choice_train_mask = choice_train_mask & trials['is_congruent']
+        
     
-    choice_correct_idx = np.where(choice_mask & correct_mask)[0]
-    choice_incorrect_idx = np.where(choice_mask & incorrect_mask)[0]
+    stim_eval_mask = stim_mask & ~stim_train_mask
+    choice_eval_mask = choice_mask & ~choice_train_mask
     
-    if len(stim_correct_idx) < 5 or len(choice_correct_idx) < 5:
-        logger.warning(f"Skipping {session_id} - not enough correct trials for 5-fold CV.")
+    stim_train_idx = np.where(stim_train_mask)[0]
+    stim_eval_idx = np.where(stim_eval_mask)[0]
+    
+    choice_train_idx = np.where(choice_train_mask)[0]
+    choice_eval_idx = np.where(choice_eval_mask)[0]
+    
+    if len(stim_train_idx) < 5 or len(choice_train_idx) < 5:
+        logger.warning(f"Skipping {session_id} - not enough correct training trials for 5-fold CV.")
         return None
         
     logger.info(f"Loading temporal widefield stim data for {stim_region_name}...")
     stim_data_list, stim_names = load_temporal_widefield_epoch(one, session_id, trials, config["hemisphere"], "stim", [stim_region_name], aggregate_parent=aggregate_parent)
     
-    logger.info(f"Loading temporal widefield choice data for {choice_region_name}...")
-    choice_data_list, choice_names = load_temporal_widefield_epoch(one, session_id, trials, config["hemisphere"], "choice", [choice_region_name], aggregate_parent=aggregate_parent)
+    logger.info(f"Skipping loading temporal widefield choice data for {choice_region_name}...")
+    # choice_data_list, choice_names = load_temporal_widefield_epoch(one, session_id, trials, config["hemisphere"], "choice", [choice_region_name], aggregate_parent=aggregate_parent)
     
-    if len(stim_data_list) == 0 or len(choice_data_list) == 0:
+    if len(stim_data_list) == 0: # or len(choice_data_list) == 0:
         logger.warning(f"Skipping {session_id} - could not extract regions.")
         return None
         
     stim_data = stim_data_list[0]
-    choice_data = choice_data_list[0]
+    # choice_data = choice_data_list[0]
     
     labels = trials["stim_side_computed"].values
     choice_labels = trials["choice"].values
     
-    X_stim_correct = stim_data[:, stim_correct_idx, :]
-    y_stim_correct = labels[stim_correct_idx]
-    X_stim_incorrect = stim_data[:, stim_incorrect_idx, :] if len(stim_incorrect_idx) > 0 else None
+    X_stim_train = stim_data[:, stim_train_idx, :]
+    y_stim_train = labels[stim_train_idx]
+    X_stim_eval = stim_data[:, stim_eval_idx, :] if len(stim_eval_idx) > 0 else None
     
-    X_choice_correct = choice_data[:, choice_correct_idx, :]
-    y_choice_correct = choice_labels[choice_correct_idx]
-    X_choice_incorrect = choice_data[:, choice_incorrect_idx, :] if len(choice_incorrect_idx) > 0 else None
+    # X_choice_train = choice_data[:, choice_train_idx, :]
+    # y_choice_train = choice_labels[choice_train_idx]
+    # X_choice_eval = choice_data[:, choice_eval_idx, :] if len(choice_eval_idx) > 0 else None
     
     project_fn = train_and_project_temporal_nested if use_nested_cv else train_and_project_temporal_single
     
     logger.info("Training Temporal Stimulus SVM (Frame 1)...")
-    stim_svm_corr, stim_svm_inc, stim_svm_info = project_fn(X_stim_correct, y_stim_correct, X_stim_incorrect, train_frame_idx=1, classifier_name='svc')
+    stim_svm_corr, stim_svm_inc, stim_svm_info = project_fn(X_stim_train, y_stim_train, X_stim_eval, train_frame_idx=1, classifier_name='svc')
     logger.info("Training Temporal Stimulus Ridge (Frame 1)...")
-    stim_ridge_corr, stim_ridge_inc, stim_ridge_info = project_fn(X_stim_correct, y_stim_correct, X_stim_incorrect, train_frame_idx=1, classifier_name='ridge')
+    stim_ridge_corr, stim_ridge_inc, stim_ridge_info = project_fn(X_stim_train, y_stim_train, X_stim_eval, train_frame_idx=1, classifier_name='ridge')
     
-    logger.info("Training Temporal Choice SVM (Last Frame)...")
-    choice_svm_corr, choice_svm_inc, choice_svm_info = project_fn(X_choice_correct, y_choice_correct, X_choice_incorrect, train_frame_idx=4, classifier_name='svc')
-    logger.info("Training Temporal Choice Ridge (Last Frame)...")
-    choice_ridge_corr, choice_ridge_inc, choice_ridge_info = project_fn(X_choice_correct, y_choice_correct, X_choice_incorrect, train_frame_idx=4, classifier_name='ridge')
+    # logger.info("Training Temporal Choice SVM (Last Frame)...")
+    # choice_svm_corr, choice_svm_inc, choice_svm_info = project_fn(X_choice_train, y_choice_train, X_choice_eval, train_frame_idx=4, classifier_name='svc')
+    # logger.info("Training Temporal Choice Ridge (Last Frame)...")
+    # choice_ridge_corr, choice_ridge_inc, choice_ridge_info = project_fn(X_choice_train, y_choice_train, X_choice_eval, train_frame_idx=4, classifier_name='ridge')
     
     results_df = []
     
-    for i, orig_idx in enumerate(stim_correct_idx):
+    for i, orig_idx in enumerate(stim_train_idx):
         row = trials.iloc[orig_idx].to_dict()
         row['original_trial_index'] = orig_idx
         row['model_epoch'] = 'stim'
-        row['is_correct_trial'] = True
+        row['is_correct_trial'] = (trials.iloc[orig_idx]["feedbackType"] == 1)
+        row['used_for_training'] = True
         for f in range(5):
             row[f'svm_projection_f{f}'] = stim_svm_corr[f][i]
             row[f'ridge_projection_f{f}'] = stim_ridge_corr[f][i]
         results_df.append(row)
         
-    for i, orig_idx in enumerate(stim_incorrect_idx):
+    for i, orig_idx in enumerate(stim_eval_idx):
         row = trials.iloc[orig_idx].to_dict()
         row['original_trial_index'] = orig_idx
         row['model_epoch'] = 'stim'
-        row['is_correct_trial'] = False
+        row['is_correct_trial'] = (trials.iloc[orig_idx]["feedbackType"] == 1)
+        row['used_for_training'] = False
         for f in range(5):
             row[f'svm_projection_f{f}'] = stim_svm_inc[f][i] if stim_svm_inc else np.nan
             row[f'ridge_projection_f{f}'] = stim_ridge_inc[f][i] if stim_ridge_inc else np.nan
         results_df.append(row)
         
-    for i, orig_idx in enumerate(choice_correct_idx):
-        row = trials.iloc[orig_idx].to_dict()
-        row['original_trial_index'] = orig_idx
-        row['model_epoch'] = 'choice'
-        row['is_correct_trial'] = True
-        for f in range(5):
-            row[f'svm_projection_f{f}'] = choice_svm_corr[f][i]
-            row[f'ridge_projection_f{f}'] = choice_ridge_corr[f][i]
-        results_df.append(row)
+    # for i, orig_idx in enumerate(choice_train_idx):
+    #     row = trials.iloc[orig_idx].to_dict()
+    #     row['original_trial_index'] = orig_idx
+    #     row['model_epoch'] = 'choice'
+    #     row['is_correct_trial'] = (trials.iloc[orig_idx]["feedbackType"] == 1)
+    #     row['used_for_training'] = True
+    #     for f in range(5):
+    #         row[f'svm_projection_f{f}'] = choice_svm_corr[f][i]
+    #         row[f'ridge_projection_f{f}'] = choice_ridge_corr[f][i]
+    #     results_df.append(row)
         
-    for i, orig_idx in enumerate(choice_incorrect_idx):
-        row = trials.iloc[orig_idx].to_dict()
-        row['original_trial_index'] = orig_idx
-        row['model_epoch'] = 'choice'
-        row['is_correct_trial'] = False
-        for f in range(5):
-            row[f'svm_projection_f{f}'] = choice_svm_inc[f][i] if choice_svm_inc else np.nan
-            row[f'ridge_projection_f{f}'] = choice_ridge_inc[f][i] if choice_ridge_inc else np.nan
-        results_df.append(row)
+    # for i, orig_idx in enumerate(choice_eval_idx):
+    #     row = trials.iloc[orig_idx].to_dict()
+    #     row['original_trial_index'] = orig_idx
+    #     row['model_epoch'] = 'choice'
+    #     row['is_correct_trial'] = (trials.iloc[orig_idx]["feedbackType"] == 1)
+    #     row['used_for_training'] = False
+    #     for f in range(5):
+    #         row[f'svm_projection_f{f}'] = choice_svm_inc[f][i] if choice_svm_inc else np.nan
+    #         row[f'ridge_projection_f{f}'] = choice_ridge_inc[f][i] if choice_ridge_inc else np.nan
+    #     results_df.append(row)
         
     results_df = pd.DataFrame(results_df)
     
     model_metadata = {
         'stim_svm_info': stim_svm_info,
         'stim_ridge_info': stim_ridge_info,
-        'choice_svm_info': choice_svm_info,
-        'choice_ridge_info': choice_ridge_info
+        # 'choice_svm_info': choice_svm_info,
+        # 'choice_ridge_info': choice_ridge_info
     }
     
     return results_df, model_metadata
@@ -315,7 +327,7 @@ if __name__ == "__main__":
 
     USE_NESTED_CV = True
     AGGREGATE_PARENT = False
-    ONLY_CONGRUENT = True
+    ONLY_CONGRUENT = False
 
     for eid, regions in tqdm(significant_pickles.items()):
         if 'VISp' in regions.get('stim', []) and 'MOs' in regions.get('choice', []):
@@ -334,7 +346,7 @@ if __name__ == "__main__":
                     out_dir.mkdir(parents=True, exist_ok=True)
                     
                     # Determine suffix based on flags
-                    suffix = "_temporal"
+                    suffix = "balanced_temporal"
                     if ONLY_CONGRUENT:
                         suffix += "_congruent"
                     if not AGGREGATE_PARENT:
